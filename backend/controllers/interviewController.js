@@ -1,5 +1,6 @@
 const Interview = require('../models/Interview');
 const Application = require('../models/Application');
+const Notification = require('../models/Notification');
 
 // @desc    Get all interviews assigned to the current interviewer
 // @route   GET /api/interviews
@@ -39,6 +40,7 @@ const getCandidateInterviews = async (req, res) => {
             .sort({ scheduledTime: 1 });
         res.json(interviews);
     } catch (error) {
+        console.error('[GET_CANDIDATE_INTERVIEWS_ERROR]', error);
         res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
@@ -49,26 +51,32 @@ const getCandidateInterviews = async (req, res) => {
 const getInterviewById = async (req, res) => {
     try {
         let interview = await Interview.findById(req.params.id)
-            .populate('candidate', 'name email')
+            .populate('candidate', 'name email avatar')
+            .populate('interviewer', 'name email')
             .populate({
                 path: 'application',
                 populate: {
                     path: 'job',
-                    select: 'title department'
+                    select: 'title department description'
                 }
-            });
+            })
+            .populate('aiResult')
+            .populate('manualScore');
 
         // If not found by ID, try finding by application reference
         if (!interview) {
             interview = await Interview.findOne({ application: req.params.id })
-                .populate('candidate', 'name email')
+                .populate('candidate', 'name email avatar')
+                .populate('interviewer', 'name email')
                 .populate({
                     path: 'application',
                     populate: {
                         path: 'job',
-                        select: 'title department'
+                        select: 'title department description'
                     }
-                });
+                })
+                .populate('aiResult')
+                .populate('manualScore');
         }
 
         if (!interview) {
@@ -102,6 +110,16 @@ const updateInterviewStatus = async (req, res) => {
         // Also update application status if interview is completed
         if (status === 'completed' && interview.application) {
             await Application.findByIdAndUpdate(interview.application, { status: 'interviewed' });
+
+            // Notify candidate
+            await Notification.create({
+                user: interview.candidate,
+                onModel: 'Candidate',
+                title: 'Interview Completed',
+                message: 'Your interview has been completed. You can check the feedback soon.',
+                type: 'success',
+                link: '/candidate/status'
+            });
         }
 
         res.json(updatedInterview);
@@ -135,6 +153,16 @@ const createInterview = async (req, res) => {
         application.status = 'interview_scheduled';
         await application.save();
 
+        // Notify candidate
+        await Notification.create({
+            user: application.candidate,
+            onModel: 'Candidate',
+            title: 'Interview Scheduled',
+            message: `An interview for ${application.job?.title || 'the position'} has been scheduled for ${new Date(scheduledTime).toLocaleString()}.`,
+            type: 'info',
+            link: '/candidate/status'
+        });
+
         res.status(201).json(interview);
     } catch (error) {
         res.status(500).json({ message: 'Server Error', error: error.message });
@@ -159,6 +187,16 @@ const endInterview = async (req, res) => {
         if (interview.application) {
             await Application.findByIdAndUpdate(interview.application, { status: 'interviewed' });
         }
+
+        // Notify candidate
+        await Notification.create({
+            user: interview.candidate,
+            onModel: 'Candidate',
+            title: 'Interview Completed',
+            message: 'Your interview session has ended.',
+            type: 'success',
+            link: '/candidate/status'
+        });
 
         res.json(interview);
     } catch (error) {

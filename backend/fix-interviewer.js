@@ -1,14 +1,15 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
-const User = require('./models/User');
+const connectDB = require('./config/db');
+const Interviewer = require('./models/Interviewer');
 
 dotenv.config();
 
 const fixInterviewer = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/ai-interviewer');
+        await connectDB();
 
-        const user = await User.findOne({ email: 'interviewchecker@gmail.com' });
+        const user = await Interviewer.findOne({ email: 'interviewchecker@gmail.com' });
         if (user) {
             console.log('USER_FOUND:', JSON.stringify(user));
             if (user.role !== 'interviewer') {

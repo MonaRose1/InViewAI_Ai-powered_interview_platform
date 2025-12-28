@@ -9,8 +9,9 @@ const AdminDashboard = () => {
         candidates: 0,
         jobs: 0,
         avgScore: 0,
-        weeklyInterviews: 0,
-        monthlyGrowth: 0
+        monthlyGrowth: 0,
+        weeklyVolume: [0, 0, 0, 0, 0, 0, 0],
+        recentActivity: []
     });
     const [loading, setLoading] = React.useState(true);
 
@@ -28,86 +29,112 @@ const AdminDashboard = () => {
         fetchStats();
     }, []);
 
+    const formatTime = (date) => {
+        const now = new Date();
+        const past = new Date(date);
+        const diff = Math.floor((now - past) / 1000 / 60); // minutes
+
+        if (diff < 1) return 'Just now';
+        if (diff < 60) return `${diff} mins ago`;
+        if (diff < 1440) return `${Math.floor(diff / 60)} hours ago`;
+        return past.toLocaleDateString();
+    };
+
+    if (loading) return (
+        <div className="flex items-center justify-center h-full min-h-[400px]">
+            <div className="w-12 h-12 border-4 border-secondary/20 border-t-secondary rounded-full animate-spin"></div>
+        </div>
+    );
+
     return (
-        <div className="space-y-6 relative">
+        <div className="space-y-6 relative pb-10">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <KPICard
                     icon={<Video className="w-6 h-6 text-white" />}
                     color="bg-secondary"
                     label="Total Interviews"
                     value={stats.interviews}
-                    sub={`${stats.weeklyInterviews} this week`}
+                    sub="All time"
                 />
                 <KPICard
                     icon={<Users className="w-6 h-6 text-white" />}
                     color="bg-purple-600"
                     label="Candidates"
                     value={stats.candidates}
-                    sub={`${stats.monthlyGrowth > 0 ? '+' : ''}${stats.monthlyGrowth}% vs last month`}
+                    sub={`${stats.monthlyGrowth > 0 ? '+' : ''}${stats.monthlyGrowth}% growth`}
                 />
                 <KPICard
                     icon={<Briefcase className="w-6 h-6 text-white" />}
                     color="bg-amber-500"
-                    label="Active Jobs"
+                    label="Open Jobs"
                     value={stats.jobs}
-                    sub="2 closing soon"
+                    sub="Active listings"
                 />
                 <KPICard
                     icon={<TrendingUp className="w-6 h-6 text-white" />}
                     color="bg-green-600"
                     label="Avg AI Score"
                     value={`${stats.avgScore}%`}
-                    sub="Stable"
+                    sub="Latest average"
                 />
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h2 className="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2">
                         Recent Activity
                     </h2>
-                    <div className="space-y-4">
-                        {[
-                            { title: 'New match found for Senior React Dev', time: '2 mins ago', type: 'match' },
-                            { title: 'Interview completed: Sarah Connor', time: '1 hour ago', type: 'interview' },
-                            { title: 'New candidate registered: John Doe', time: '3 hours ago', type: 'user' },
-                            { title: 'Job listing updated: Product Manager', time: '5 hours ago', type: 'job' },
-                        ].map((activity, i) => (
-                            <div key={i} className="flex items-center gap-4 p-3 hover:bg-slate-50 rounded-lg transition-colors group">
-                                <div className={`w-2 h-2 rounded-full ${activity.type === 'match' ? 'bg-secondary' :
-                                    activity.type === 'interview' ? 'bg-amber-500' :
+                    <div className="space-y-1">
+                        {stats.recentActivity.length === 0 ? (
+                            <p className="text-slate-400 text-sm py-10 text-center">No recent activity</p>
+                        ) : (
+                            stats.recentActivity.map((activity, i) => (
+                                <motion.div
+                                    initial={{ x: -20, opacity: 0 }}
+                                    animate={{ x: 0, opacity: 1 }}
+                                    transition={{ delay: i * 0.1 }}
+                                    key={i}
+                                    className="flex items-center gap-4 p-3 hover:bg-slate-50 rounded-xl transition-colors group cursor-default"
+                                >
+                                    <div className={`w-2.5 h-2.5 rounded-full ${activity.type === 'interview' ? 'bg-secondary' :
                                         activity.type === 'user' ? 'bg-purple-500' : 'bg-green-500'
-                                    }`}></div>
-                                <div className="flex-1">
-                                    <p className="text-sm font-medium text-slate-700">{activity.title}</p>
-                                    <p className="text-xs text-slate-400">{activity.time}</p>
-                                </div>
-                            </div>
-                        ))}
+                                        }`}></div>
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-slate-700 group-hover:text-secondary transition-colors">{activity.title}</p>
+                                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-tight">{formatTime(activity.time)}</p>
+                                    </div>
+                                </motion.div>
+                            ))
+                        )}
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                     <h2 className="text-lg font-bold mb-6 text-slate-800 flex items-center gap-2">
                         <BarChartIcon size={20} className="text-slate-400" />
                         Weekly Performance
                     </h2>
-                    <div className="h-48 flex items-end justify-between gap-2 px-2">
-                        {[45, 75, 55, 90, 65, 85, 70].map((val, i) => (
-                            <motion.div
-                                key={i}
-                                initial={{ height: 0 }}
-                                animate={{ height: `${val}%` }}
-                                transition={{ delay: i * 0.1, duration: 0.8 }}
-                                className="w-full bg-secondary/20 hover:bg-secondary/40 transition-colors rounded-t-md relative group"
-                            >
-                                <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition whitespace-nowrap z-10">
-                                    {val}% Accuracy
+                    <div className="h-48 flex items-end justify-between gap-3 px-2">
+                        {stats.weeklyVolume.map((val, i) => {
+                            const max = Math.max(...stats.weeklyVolume) || 1;
+                            const height = (val / max) * 100;
+                            return (
+                                <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end">
+                                    <motion.div
+                                        initial={{ height: 0 }}
+                                        animate={{ height: `${height}%` }}
+                                        transition={{ delay: i * 0.1, duration: 1 }}
+                                        className="w-full bg-secondary/10 hover:bg-secondary transition-colors rounded-t-lg relative group"
+                                    >
+                                        <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] font-bold px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 transition-all pointer-events-none whitespace-nowrap z-10 shadow-xl">
+                                            {val} Interviews
+                                        </div>
+                                    </motion.div>
                                 </div>
-                            </motion.div>
-                        ))}
+                            );
+                        })}
                     </div>
-                    <div className="flex justify-between mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">
+                    <div className="flex justify-between mt-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest px-1">
                         <span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span><span>Sun</span>
                     </div>
                 </div>

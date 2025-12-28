@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const connectDB = require('./config/db');
 const User = require('./models/User');
 const Job = require('./models/Job');
 const Application = require('./models/Application');
@@ -9,7 +10,7 @@ dotenv.config();
 
 const checkDB = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/ai-interviewer');
+        await connectDB();
 
         const data = {
             users: await User.countDocuments(),

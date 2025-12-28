@@ -4,38 +4,55 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
 
 dotenv.config();
 
-const path = require('path');
 const app = express();
 const server = http.createServer(app);
 
-// Middleware
-app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Increased for base64 avatar uploads
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+// Models & Services
+const Interview = require('./models/Interview');
+const Application = require('./models/Application');
+const Job = require('./models/Job');
+const { evaluateAnswer } = require('./services/aiProxyService');
+const connectDB = require('./config/db');
 
-const { apiLimiter, authLimiter } = require('./middleware/rateLimitMiddleware');
+// Database Connection
+connectDB();
+
+// Middleware
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow any localhost origin and specific network IPs if needed
+    if (!origin || /^http:\/\/localhost:\d+$/.test(origin) || /^http:\/\/127\.0\.0\.1:\d+$/.test(origin) || /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin) || /^http:\/\/172\.\d+\.\d+\.\d+:\d+$/.test(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Socket.IO Setup
 const io = new Server(server, {
   cors: {
-    origin: "*", // Allow all for dev, restrict in prod
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  console.log('[CONN] User joined:', socket.id);
 
-  socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
-  });
-
-  // WebRTC Signaling Events
   socket.on('join-room', (roomId, userId) => {
     socket.join(roomId);
+    console.log(`[ROOM] User ${userId} joined: ${roomId}`);
     socket.to(roomId).emit('user-connected', { userId, socketId: socket.id });
   });
 
@@ -51,115 +68,129 @@ io.on('connection', (socket) => {
     io.to(incoming.target).emit('ice-candidate', incoming.candidate);
   });
 
-  // Code Editor Events
-  socket.on('code-change', (payload) => {
-    // Broadcast to everyone in the room except sender
-    socket.to(payload.roomId).emit('code-update', payload.code);
-  });
-
-  socket.on('run-code', (payload) => {
-    const { code, roomId } = payload;
-    const vm = require('vm'); // Late import to avoid top-level clutter
-
-    try {
-      // Create a sandbox with console support
-      const logOutput = [];
-      const sandbox = {
-        console: {
-          log: (...args) => {
-            logOutput.push(args.map(arg => (typeof arg === 'object' ? JSON.stringify(arg) : String(arg))).join(' '));
-          },
-          error: (...args) => {
-            logOutput.push('[Error] ' + args.join(' '));
-          },
-          warn: (...args) => {
-            logOutput.push('[Warn] ' + args.join(' '));
-          }
-        },
-        setTimeout: setTimeout,
-        clearTimeout: clearTimeout
-      };
-
-      // Contextify the sandbox
-      vm.createContext(sandbox);
-
-      // Execute code with timeout
-      const script = new vm.Script(`
-            try {
-                ${code}
-            } catch (e) {
-                console.error(e.message);
-            }
-        `);
-
-      script.runInContext(sandbox, { timeout: 1000 });
-
-      // Small delay to capture async logs if any (simple approach)
-      setTimeout(() => {
-        const output = logOutput.length > 0 ? `> Output:\n${logOutput.join('\n')}` : `> Execution finished (No Output).`;
-        io.to(roomId).emit('code-output', output);
-      }, 50);
-
-    } catch (error) {
-      const errorOutput = `> Execution Failed:\n${error.message}`;
-      io.to(roomId).emit('code-output', errorOutput);
-    }
-  });
-  // AI Analytics Events
   socket.on('analyze-frame', async (payload) => {
     const { roomId, image_data } = payload;
-    const { analyzeFrame } = require('./services/aiProxyService'); // Late import
-
+    const { analyzeFrame } = require('./services/aiProxyService');
     const result = await analyzeFrame(image_data, roomId);
-
     if (result) {
-      // Broadcast result to everyone in room (candidate + interviewer)
-      // Ideally, send only to Interviewer, but for now broadcast is fine
       io.to(roomId).emit('ai-result', result);
     }
   });
 
-  // Question Bank Events
   socket.on('send-questions', async (payload) => {
-    const { roomId, questions } = payload;
-    // Notify candidate that questions have been sent
-    socket.to(roomId).emit('receive-questions', questions);
+    let { roomId, questions } = payload;
 
-    // Also update the interview document in DB to store these questions
+    // Defensive: Parse if questions is a string
+    if (typeof questions === 'string') {
+      try { questions = JSON.parse(questions); } catch (e) { console.error("[QUESTIONS] JSON Parse failed"); }
+    }
+
+    console.log(`[QUESTIONS] Received ${questions?.length} questions for room: ${roomId}`);
+    if (!roomId || !Array.isArray(questions)) return;
+
+    // Broadcast to candidate immediately
+    io.to(roomId).emit('receive-questions', questions);
+
+    // Update DB
     try {
-      const Interview = require('./models/Interview');
-      await Interview.findOneAndUpdate(
-        { _id: roomId }, // assuming roomId is the interview ID
-        { $set: { questions: questions.map(q => ({ ...q, status: 'pending' })) } }
-      );
+      const interview = await Interview.findById(roomId);
+      if (interview) {
+        const existingIds = (interview.questions || []).map(q => q.questionId?.toString());
+        const newQuestions = questions.filter(q => !existingIds.includes(q.questionId?.toString()));
+
+        if (newQuestions.length > 0) {
+          console.log(`[DB] Appending ${newQuestions.length} questions`);
+          const questionsToPush = newQuestions.map(q => ({
+            questionId: q.questionId,
+            text: q.text,
+            type: q.type,
+            options: q.options || [],
+            status: 'pending'
+          }));
+
+          interview.questions.push(...questionsToPush);
+          await interview.save();
+          console.log(`[DB] Saved questions successfully`);
+        }
+      }
     } catch (err) {
-      console.error('Error saving questions to interview:', err);
+      console.error('[DB] QUESTION SAVE ERROR:', err);
     }
   });
 
   socket.on('submit-answers', async (payload) => {
-    const { roomId, answers } = payload; // answers is an array of { questionId, answer }
+    let { roomId, answers } = payload;
+
+    // Defensive: Parse if answers is a string
+    if (typeof answers === 'string') {
+      try { answers = JSON.parse(answers); } catch (e) { console.error("[SUBMIT] JSON Parse failed"); }
+    }
+
+    console.log(`[SUBMIT] Received answers for room: ${roomId}, count: ${answers?.length}`);
+    if (!roomId || !answers || !Array.isArray(answers)) return;
 
     try {
-      const Interview = require('./models/Interview');
-      const interview = await Interview.findById(roomId);
+      const interview = await Interview.findById(roomId).populate({
+        path: 'application',
+        populate: { path: 'job' }
+      });
 
-      if (interview) {
-        // Map answers back to the stored questions
-        interview.questions = interview.questions.map(q => {
-          const submitted = answers.find(a => a.questionId === q.questionId.toString() || a.questionId === q._id.toString());
-          if (submitted) {
-            return { ...q, candidateAnswer: submitted.answer, status: 'submitted' };
-          }
-          return q;
-        });
+      if (!interview) {
+        console.error(`[SUBMIT] Interview not found: ${roomId}`);
+        return;
+      }
+
+      // Stage 1: Immediate save and broadcast
+      let updatedAny = false;
+      answers.forEach(submitted => {
+        const q = interview.questions.find(iq =>
+          (iq.questionId && iq.questionId.toString() === submitted.questionId?.toString()) ||
+          (iq._id && iq._id.toString() === submitted.questionId?.toString())
+        );
+
+        if (q) {
+          q.candidateAnswer = submitted.answer;
+          if (q.status !== 'analyzed') q.status = 'submitted';
+          updatedAny = true;
+        }
+      });
+
+      if (updatedAny) {
         await interview.save();
+        io.to(roomId).emit('answers-received', interview.questions);
+        console.log(`[SUBMIT] Answers broadcast for room: ${roomId}`);
 
-        // Notify interviewer that answers are in
-        socket.to(roomId).emit('answers-received', interview.questions);
+        // Stage 2: Background AI Review
+        const jobTitle = interview.application?.job?.title || "Software Engineer";
+
+        interview.questions.forEach(async (q) => {
+          if (q.status === 'submitted' && q.candidateAnswer) {
+            console.log(`[AI] Analyzing: ${q.text.substring(0, 20)}...`);
+            try {
+              const aiResult = await evaluateAnswer(q.text, q.candidateAnswer, jobTitle);
+              if (aiResult && aiResult.evaluation) {
+                const currentInterview = await Interview.findById(roomId);
+                const currentQ = currentInterview.questions.id(q._id);
+                if (currentQ) {
+                  currentQ.aiAnalysis = {
+                    score: aiResult.evaluation.overall_score || 0,
+                    feedback: aiResult.evaluation.detailed_feedback || 'Analysis complete.',
+                    technicalAccuracy: aiResult.evaluation.technical_score || 0
+                  };
+                  currentQ.status = 'analyzed';
+                  await currentInterview.save();
+                  io.to(roomId).emit('answers-received', currentInterview.questions);
+                  console.log(`[AI] Complete: ${currentQ._id}`);
+                }
+              }
+            } catch (aiErr) {
+              console.error(`[AI] Error: ${q._id}`, aiErr.message);
+            }
+          }
+        });
       }
     } catch (err) {
-      console.error('Error submitting answers:', err);
+      console.error('[SUBMIT] fatal:', err);
     }
   });
 
@@ -175,44 +206,36 @@ io.on('connection', (socket) => {
       timestamp: new Date()
     });
   });
+
+  socket.on('disconnect', () => {
+    console.log('[CONN] User left:', socket.id);
+  });
 });
-
-// Database Connection
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/ai-interviewer');
-    console.log('MongoDB Connected');
-  } catch (err) {
-    console.error('MongoDB Connection Error:', err);
-    process.exit(1);
-  }
-};
-
-connectDB();
 
 // Routes
-app.get('/', (req, res) => {
-  res.send('AI Interviewer API is running');
+app.get('/', (req, res) => res.send('v5-SERVER: Online'));
+app.use('/api/auth', require('./routes/authRoutes'));
+app.use('/api/profile', require('./routes/profileRoutes'));
+app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/organization', require('./routes/organizationRoutes'));
+app.use('/api/notes', require('./routes/noteRoutes'));
+app.use('/api/jobs', require('./routes/jobRoutes'));
+app.use('/api/applications', require('./routes/applicationRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
+app.use('/api/scores', require('./routes/scoreRoutes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api/interviews', require('./routes/interviewRoutes'));
+app.use('/api/ranking', require('./routes/rankingRoutes'));
+app.use('/api/questions', require('./routes/questionRoutes'));
+
+const PORT = 5000;
+
+process.on('uncaughtException', (err) => {
+  console.error('CRITICAL ERROR!', err);
+  process.exit(1);
 });
 
-// Define Routes
-app.use('/api/auth', authLimiter, require('./routes/authRoutes'));
-app.use('/api/users', apiLimiter, require('./routes/userRoutes'));
-app.use('/api/profile', apiLimiter, require('./routes/profileRoutes'));
-app.use('/api/notifications', apiLimiter, require('./routes/notificationRoutes'));
-app.use('/api/organization', apiLimiter, require('./routes/organizationRoutes'));
-app.use('/api/notes', apiLimiter, require('./routes/noteRoutes'));
-app.use('/api/jobs', apiLimiter, require('./routes/jobRoutes'));
-app.use('/api/applications', apiLimiter, require('./routes/applicationRoutes'));
-app.use('/api/ai', apiLimiter, require('./routes/aiRoutes'));
-app.use('/api/scores', apiLimiter, require('./routes/scoreRoutes'));
-app.use('/api/admin', apiLimiter, require('./routes/adminRoutes'));
-app.use('/api/interviews', apiLimiter, require('./routes/interviewRoutes'));
-app.use('/api/ranking', apiLimiter, require('./routes/rankingRoutes'));
-app.use('/api/questions', apiLimiter, require('./routes/questionRoutes'));
-
-const PORT = process.env.PORT || 5000;
-
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`v5-SERVER: Listening on all interfaces at port ${PORT}`);
+  console.log(`Mode: ${process.env.NODE_ENV || 'development'}`);
 });

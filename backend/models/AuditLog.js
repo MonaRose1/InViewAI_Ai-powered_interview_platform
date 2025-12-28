@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const auditLogSchema = new mongoose.Schema({
-    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    user: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'onModel' },
+    onModel: { type: String, required: true, enum: ['Candidate', 'Interviewer', 'Admin'] },
     action: { type: String, required: true }, // e.g., "USER_DELETED", "JOB_UPDATED"
     targetType: { type: String, required: true }, // e.g., "User", "Job"
     targetId: { type: mongoose.Schema.Types.ObjectId },

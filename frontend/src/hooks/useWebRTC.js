@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
 
-const SOCKET_URL = '';
+const SOCKET_URL = import.meta.env.VITE_API_URL
+    ? import.meta.env.VITE_API_URL.replace('/api', '')
+    : 'http://localhost:5000';
 
 const useWebRTC = (roomId, userId) => {
     const [localStream, setLocalStream] = useState(null);
@@ -10,11 +12,13 @@ const useWebRTC = (roomId, userId) => {
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 
+    const [socket, setSocket] = useState(null);
     const socketRef = useRef();
     const peerConnectionRef = useRef();
     const localVideoRef = useRef();
     const remoteVideoRef = useRef();
     const remoteSocketId = useRef(null);
+    const localStreamRef = useRef(null); // Fix: Use Ref to access stream inside event handlers
 
     const servers = {
         iceServers: [
@@ -27,22 +31,48 @@ const useWebRTC = (roomId, userId) => {
     useEffect(() => {
         if (!roomId) return;
 
-        socketRef.current = io(SOCKET_URL);
+        console.log('[CAMERA] Initializing WebRTC for room:', roomId);
+        console.log('[CAMERA] Connecting to socket server at:', SOCKET_URL);
+
+        const newSocket = io(SOCKET_URL);
+        socketRef.current = newSocket;
+        setSocket(newSocket);
+
+        newSocket.on('connect', () => {
+            console.log('[Socket] Connected to server:', newSocket.id);
+        });
+
+        newSocket.on('connect_error', (err) => {
+            console.error('[Socket] Connection error:', err);
+            setConnectionStatus('error');
+        });
 
         // Get User Media with enhanced error handling
+        console.log('[CAMERA] Requesting camera and microphone access...');
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then((stream) => {
+                console.log('[CAMERA] ✅ Camera access granted!');
+                console.log('[CAMERA] Video tracks:', stream.getVideoTracks());
+                console.log('[CAMERA] Audio tracks:', stream.getAudioTracks());
+
                 setLocalStream(stream);
+                localStreamRef.current = stream; // Update existing Ref
+
                 if (localVideoRef.current) {
                     localVideoRef.current.srcObject = stream;
                     localVideoRef.current.muted = true; // Always mute local video to prevent echo
+                    console.log('[CAMERA] ✅ Local video element updated');
+                } else {
+                    console.warn('[CAMERA] ⚠️ Local video ref not ready yet, will sync via useEffect');
                 }
 
                 socketRef.current.emit('join-room', roomId, userId);
-                setConnectionStatus('connecting');
+                setConnectionStatus('connected');
             })
             .catch((err) => {
-                console.error('Error accessing media devices:', err);
+                console.error('[CAMERA] ❌ Error accessing media devices:', err);
+                console.error('[CAMERA] Error name:', err.name);
+                console.error('[CAMERA] Error message:', err.message);
 
                 // Provide user-friendly error messages
                 let errorMessage = 'Unable to access camera/microphone.\n\n';
@@ -72,7 +102,7 @@ const useWebRTC = (roomId, userId) => {
                     // Continue interview without video - still join room for questions/chat
                     socketRef.current.emit('join-room', roomId, userId);
                     setConnectionStatus('connected-no-media');
-                    console.log('Interview continuing without camera/microphone');
+                    console.log('[CAMERA] Interview continuing without camera/microphone');
                 } else {
                     setConnectionStatus('error');
                 }
@@ -80,11 +110,19 @@ const useWebRTC = (roomId, userId) => {
 
         // Socket Events
         socketRef.current.on('user-connected', ({ userId: remoteUser, socketId }) => {
-            console.log('User connected:', remoteUser, socketId);
+            console.log('[WEBRTC] User connected:', remoteUser, socketId);
+            const currentStream = localStreamRef.current;
+            console.log('[WEBRTC] Local stream available:', !!currentStream);
+            console.log('[WEBRTC] Local video ref ready:', !!localVideoRef.current);
             remoteSocketId.current = socketId;
-            // Use current value of ref to avoid stale closure
-            if (localVideoRef.current?.srcObject) {
+
+
+            // Check if we have a local stream to share
+            if (currentStream) {
+                console.log('[WEBRTC] Creating offer to:', socketId);
                 createOffer(socketId);
+            } else {
+                console.warn('[WEBRTC] ⚠️ No local stream available yet, cannot create offer');
             }
         });
 
@@ -93,8 +131,8 @@ const useWebRTC = (roomId, userId) => {
         socketRef.current.on('ice-candidate', handleReceiveIceCandidate);
 
         return () => {
-            if (localStream) {
-                localStream.getTracks().forEach(track => track.stop());
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(track => track.stop());
             }
             if (socketRef.current) {
                 socketRef.current.disconnect();
@@ -104,6 +142,25 @@ const useWebRTC = (roomId, userId) => {
             }
         };
     }, [roomId, userId]);
+
+    // Sync localStream to video element when stream or ref changes
+    useEffect(() => {
+        if (localStream && localVideoRef.current) {
+            console.log('[CAMERA] Syncing local stream to video element');
+            localVideoRef.current.srcObject = localStream;
+            localVideoRef.current.muted = true;
+            console.log('[CAMERA] ✅ Local stream synced successfully');
+        }
+    }, [localStream]);
+
+    // Sync remoteStream to video element when stream or ref changes
+    useEffect(() => {
+        if (remoteStream && remoteVideoRef.current) {
+            console.log('[CAMERA] Syncing remote stream to video element');
+            remoteVideoRef.current.srcObject = remoteStream;
+            console.log('[CAMERA] ✅ Remote stream synced successfully');
+        }
+    }, [remoteStream]);
 
     const createPeerConnection = () => {
         const peerConnection = new RTCPeerConnection(servers);
@@ -124,9 +181,10 @@ const useWebRTC = (roomId, userId) => {
             }
         };
 
-        if (localStream) {
-            localStream.getTracks().forEach((track) => {
-                peerConnection.addTrack(track, localStream);
+        const currentStream = localStreamRef.current;
+        if (currentStream) {
+            currentStream.getTracks().forEach((track) => {
+                peerConnection.addTrack(track, currentStream);
             });
         }
 
@@ -148,8 +206,10 @@ const useWebRTC = (roomId, userId) => {
 
     const handleReceiveOffer = async ({ sdp, senderSocketId }) => {
         remoteSocketId.current = senderSocketId; // Capture sender ID
+
         const peerConnection = createPeerConnection();
         await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
+
         const answer = await peerConnection.createAnswer();
         await peerConnection.setLocalDescription(answer);
 
@@ -157,13 +217,11 @@ const useWebRTC = (roomId, userId) => {
             target: senderSocketId,
             sdp: answer,
         });
-        setConnectionStatus('connected');
     };
 
     const handleReceiveAnswer = async ({ sdp }) => {
         if (peerConnectionRef.current) {
             await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-            setConnectionStatus('connected');
         }
     };
 
@@ -203,7 +261,8 @@ const useWebRTC = (roomId, userId) => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef // Exposed for other real-time features
+        socketRef,
+        socket
     };
 };
 

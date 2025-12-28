@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://127.0.0.1:8002';
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8002';
 
 const analyzeFrame = async (frameData, sessionId) => {
     try {
@@ -10,25 +10,26 @@ const analyzeFrame = async (frameData, sessionId) => {
         });
         return response.data;
     } catch (error) {
-        console.error('AI Proxy Error:', error.message);
+        console.error(`AI Proxy Error (Frame) at ${AI_SERVICE_URL}:`, error.message);
         return null;
     }
 };
 
-const analyzeAnswer = async (question, answer) => {
+const evaluateAnswer = async (question, answer, jobRole = "Software Engineer") => {
     try {
-        const response = await axios.post(`${AI_SERVICE_URL}/api/analyze-answer`, {
+        const response = await axios.post(`${AI_SERVICE_URL}/api/evaluate-answer`, {
             question,
-            answer
+            answer,
+            job_role: jobRole
         });
         return response.data;
     } catch (error) {
-        console.error('AI Answer Analysis Error:', error.message);
+        console.error('AI Evaluation Error:', error.message);
         return null;
     }
 };
 
 module.exports = {
     analyzeFrame,
-    analyzeAnswer
+    evaluateAnswer
 };

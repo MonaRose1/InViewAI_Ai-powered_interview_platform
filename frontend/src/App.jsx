@@ -14,7 +14,6 @@ import AdminAnalytics from './pages/admin/AdminAnalytics';
 import AdminLogs from './pages/admin/AdminLogs';
 import AdminExports from './pages/admin/AdminExports';
 
-import AiConfigPanel from './pages/admin/settings/AiConfigPanel';
 import InterviewerDashboard from './pages/interviewer/InterviewerDashboard';
 import InterviewerApplicants from './pages/interviewer/InterviewerApplicants';
 import InterviewerInterviews from './pages/interviewer/InterviewerInterviews';
@@ -55,8 +54,8 @@ import Toast from './components/Toast';
 
 const App = () => {
   return (
-    <NotificationProvider>
-      <AuthProvider>
+    <AuthProvider>
+      <NotificationProvider>
         <Router>
           <Toast />
           <Routes>
@@ -91,7 +90,6 @@ const App = () => {
               <Route path="logs" element={<AdminLogs />} />
               <Route path="exports" element={<AdminExports />} />
 
-              <Route path="settings/ai" element={<AiConfigPanel />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>
 
@@ -130,7 +128,6 @@ const App = () => {
               <Route path="dashboard" element={<InterviewerDashboard />} />
               <Route path="applicants" element={<InterviewerApplicants />} />
               <Route path="interviews" element={<InterviewerInterviews />} />
-              <Route path="interviews/:id/live" element={<LiveInterviewPage />} />
               <Route path="interviews/:id/rating" element={<InterviewerRatingPage />} />
               <Route path="interviews/:id/notes" element={<InterviewerNotes />} />
               <Route path="question-bank" element={<InterviewerQuestionPage />} />
@@ -149,14 +146,13 @@ const App = () => {
               <Route path="applications" element={<CandidateApplicationsPage />} />
               <Route path="applications/:id/status" element={<CandidateStatus />} />
               <Route path="interviews/:id/prepare" element={<CandidateInterviewPrep />} />
-              <Route path="interviews/:id" element={<CandidateLivePage />} />
               <Route path="resume" element={<CandidateResume />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>
           </Routes>
         </Router>
-      </AuthProvider>
-    </NotificationProvider>
+      </NotificationProvider>
+    </AuthProvider>
   );
 };
 

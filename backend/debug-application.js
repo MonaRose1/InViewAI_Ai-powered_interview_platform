@@ -1,21 +1,22 @@
 const mongoose = require('mongoose');
-const User = require('./models/User');
+const dotenv = require('dotenv');
+const connectDB = require('./config/db');
+const Candidate = require('./models/Candidate');
 const Job = require('./models/Job');
 const Application = require('./models/Application');
-const dotenv = require('dotenv');
 
 dotenv.config();
 
 const run = async () => {
     try {
         console.log('Connecting to DB...');
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/ai-interviewer');
+        await connectDB();
         console.log('Connected.');
 
         // 1. Create User
         const userEmail = `debug_${Date.now()}@test.com`;
         console.log(`Creating user ${userEmail}...`);
-        const user = await User.create({
+        const user = await Candidate.create({
             name: 'Debug User',
             email: userEmail,
             password: 'password123',

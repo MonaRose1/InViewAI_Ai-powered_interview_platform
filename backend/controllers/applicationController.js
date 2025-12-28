@@ -1,5 +1,6 @@
 const Application = require('../models/Application');
 const Job = require('../models/Job');
+const Notification = require('../models/Notification');
 
 // @desc    Apply for a job
 // @route   POST /api/applications
@@ -33,6 +34,16 @@ const applyForJob = async (req, res) => {
         job.applicantsCount = job.applicantsCount + 1;
         await job.save();
 
+        // Create notification for candidate
+        await Notification.create({
+            user: req.user._id,
+            onModel: 'Candidate',
+            title: 'Application Submitted',
+            message: `You have successfully applied for ${job.title}.`,
+            type: 'success',
+            link: '/candidate/applications'
+        });
+
         res.status(201).json(application);
     } catch (error) {
         console.error('Error in applyForJob:', error);
@@ -49,7 +60,8 @@ const getMyApplications = async (req, res) => {
             .populate('job', 'title department status');
         res.json(applications);
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('[GET_MY_APPS_ERROR]', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
@@ -62,7 +74,8 @@ const getJobApplications = async (req, res) => {
             .populate('candidate', 'name email');
         res.json(applications);
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('[GET_JOB_APPS_ERROR]', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
@@ -78,6 +91,18 @@ const updateApplicationStatus = async (req, res) => {
         if (application) {
             application.status = status;
             const updatedApplication = await application.save();
+
+            // Notify candidate about status update
+            const job = await Job.findById(application.job);
+            await Notification.create({
+                user: application.candidate,
+                onModel: 'Candidate',
+                title: 'Application Update',
+                message: `Your application for ${job?.title || 'a position'} has been updated to "${status}".`,
+                type: 'info',
+                link: '/candidate/applications'
+            });
+
             res.json(updatedApplication);
         } else {
             res.status(404).json({ message: 'Application not found' });
@@ -98,16 +123,7 @@ const getApplications = async (req, res) => {
             .populate('job', 'title department company location')
             .sort({ createdAt: -1 });
 
-        // Get all application IDs that already have interviews
-        const Interview = require('../models/Interview');
-        const interviewedAppIds = await Interview.distinct('application');
-
-        // Filter out applications that have interviews
-        const filteredApps = applications.filter(app =>
-            !interviewedAppIds.map(id => id.toString()).includes(app._id.toString())
-        );
-
-        res.json(filteredApps);
+        res.json(applications);
     } catch (error) {
         console.error('Error fetching applications:', error);
         res.status(500).json({ message: 'Server Error' });

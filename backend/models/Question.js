@@ -11,7 +11,8 @@ const questionSchema = new mongoose.Schema({
     correctAnswer: { type: String }, // For auto-grading if applicable
     category: { type: String, default: 'General' },
     difficulty: { type: String, enum: ['Easy', 'Medium', 'Hard'], default: 'Medium' },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, required: true, refPath: 'onModel' },
+    onModel: { type: String, required: true, enum: ['Admin', 'Interviewer'] },
     createdAt: { type: Date, default: Date.now }
 });
 

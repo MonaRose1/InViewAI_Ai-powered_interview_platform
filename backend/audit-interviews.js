@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const connectDB = require('./config/db');
 const Interview = require('./models/Interview');
 const User = require('./models/User');
 
@@ -7,7 +8,7 @@ dotenv.config();
 
 const auditInterviews = async () => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/ai-interviewer');
+        await connectDB();
 
         const interviews = await Interview.find({}).populate('interviewer', 'name email');
         console.log('AUDIT_START');

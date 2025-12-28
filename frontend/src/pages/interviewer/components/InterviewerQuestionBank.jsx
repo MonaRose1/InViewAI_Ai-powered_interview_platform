@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, Send, CheckCircle2, ChevronRight, X, AlertCircle } from 'lucide-react';
 import api from '../../../services/api';
 
-const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) => {
+const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId, selectedQuestions, setSelectedQuestions }) => {
     const [bank, setBank] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedQuestions, setSelectedQuestions] = useState([]);
     const [showNewForm, setShowNewForm] = useState(false);
     const [newQuestion, setNewQuestion] = useState({
         text: '',
@@ -28,19 +27,22 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
     }, []);
 
     const toggleSelect = (q) => {
-        if (selectedQuestions.find(sq => sq._id === q._id)) {
-            setSelectedQuestions(selectedQuestions.filter(sq => sq._id !== q._id));
-        } else {
-            setSelectedQuestions([...selectedQuestions, q]);
-        }
+        setSelectedQuestions(prev => {
+            const current = Array.isArray(prev) ? prev : [];
+            if (current.find(sq => sq._id === q._id)) {
+                return current.filter(sq => sq._id !== q._id);
+            } else {
+                return [...current, q];
+            }
+        });
     };
 
     const handleCreateQuestion = async () => {
         if (!newQuestion.text) return;
         try {
             const { data } = await api.post('/questions', newQuestion);
-            setBank([data, ...bank]);
-            setSelectedQuestions([...selectedQuestions, data]);
+            setBank(prev => [data, ...prev]);
+            setSelectedQuestions(prev => [...(Array.isArray(prev) ? prev : []), data]);
             setShowNewForm(false);
             setNewQuestion({ text: '', type: 'text', options: ['', '', ''], category: 'Technical' });
         } catch (err) {
@@ -54,9 +56,10 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
             return;
         }
 
+        console.log(`Emitting send-questions to room ${roomId}`, selectedQuestions);
         socket.emit('send-questions', {
             roomId: roomId,
-            questions: selectedQuestions.map(q => ({
+            questions: (selectedQuestions || []).map(q => ({
                 questionId: q._id,
                 text: q.text,
                 type: q.type,
@@ -118,9 +121,9 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
                         <div
                             key={q._id}
                             onClick={() => toggleSelect(q)}
-                            className={`p-5 rounded-3xl border transition-all duration-300 cursor-pointer group relative overflow-hidden ${selectedQuestions.find(sq => sq._id === q._id) ? 'border-secondary bg-secondary/5 ring-4 ring-secondary/5' : 'border-slate-100 hover:border-secondary/30 bg-white hover:shadow-xl hover:shadow-slate-200/50'}`}
+                            className={`p-5 rounded-3xl border transition-all duration-300 cursor-pointer group relative overflow-hidden ${(selectedQuestions || []).find(sq => sq._id === q._id) ? 'border-secondary bg-secondary/5 ring-4 ring-secondary/5' : 'border-slate-100 hover:border-secondary/30 bg-white hover:shadow-xl hover:shadow-slate-200/50'}`}
                         >
-                            {selectedQuestions.find(sq => sq._id === q._id) && (
+                            {(selectedQuestions || []).find(sq => sq._id === q._id) && (
                                 <div className="absolute top-0 right-0 w-20 h-20 bg-secondary/5 rounded-full -mr-10 -mt-10 blur-xl"></div>
                             )}
                             <div className="flex justify-between items-start gap-4 relative z-10">
@@ -135,8 +138,8 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
                                     </div>
                                     <p className="text-sm font-black text-slate-800 leading-snug tracking-tight">{q.text}</p>
                                 </div>
-                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${selectedQuestions.find(sq => sq._id === q._id) ? 'bg-secondary text-white shadow-lg shadow-secondary/20' : 'bg-slate-50 text-slate-200 group-hover:text-secondary group-hover:bg-secondary/5'}`}>
-                                    {selectedQuestions.find(sq => sq._id === q._id) ? (
+                                <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${(selectedQuestions || []).find(sq => sq._id === q._id) ? 'bg-secondary text-white shadow-lg shadow-secondary/20' : 'bg-slate-50 text-slate-200 group-hover:text-secondary group-hover:bg-secondary/5'}`}>
+                                    {(selectedQuestions || []).find(sq => sq._id === q._id) ? (
                                         <CheckCircle2 size={18} />
                                     ) : (
                                         <Plus size={18} />
@@ -146,8 +149,8 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
                         </div>
                     ))
                 ) : (
-                    selectedQuestions.length > 0 ? (
-                        selectedQuestions.map(q => (
+                    (selectedQuestions || []).length > 0 ? (
+                        (selectedQuestions || []).map(q => (
                             <div key={q._id} className="p-4 rounded-2xl border border-secondary bg-secondary/5 flex justify-between items-center group">
                                 <p className="text-sm font-bold text-slate-800">{q.text}</p>
                                 <button onClick={() => toggleSelect(q)} className="p-1 text-slate-400 hover:text-red-500">
@@ -165,11 +168,11 @@ const InterviewerQuestionBank = ({ questions, setQuestions, socket, roomId }) =>
             </div>
 
             {/* Footer */}
-            {selectedQuestions.length > 0 && (
+            {(selectedQuestions || []).length > 0 && (
                 <div className="p-4 bg-slate-50 border-t border-slate-100 flex flex-col gap-3">
                     <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-500">{selectedQuestions.length} questions selected</span>
-                        {selectedQuestions.length < 3 && (
+                        <span className="text-xs font-bold text-slate-500">{(selectedQuestions || []).length} questions selected</span>
+                        {(selectedQuestions || []).length < 3 && (
                             <span className="text-[10px] font-black text-amber-500 uppercase">Min 3 required</span>
                         )}
                     </div>

@@ -1,7 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
+const { adminOnly } = require('../middleware/adminMiddleware');
 const Notification = require('../models/Notification');
+const Candidate = require('../models/Candidate');
+const Interviewer = require('../models/Interviewer');
+const Admin = require('../models/Admin');
+// const User = require('../models/User'); // Deleted
 
 // @route   GET /api/notifications
 // @desc    Get user notifications
@@ -82,6 +87,7 @@ router.post('/', protect, async (req, res) => {
 
         const notification = await Notification.create({
             user: req.user.id,
+            onModel: req.user.role === 'admin' ? 'Admin' : (req.user.role === 'interviewer' ? 'Interviewer' : 'Candidate'),
             title,
             message,
             type,
@@ -90,6 +96,40 @@ router.post('/', protect, async (req, res) => {
 
         res.status(201).json(notification);
     } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
+
+// @route   POST /api/notifications/broadcast
+// @desc    Create broadcast notification for all users
+// @access  Private/Admin
+// @route   POST /api/notifications/broadcast
+// @desc    Create broadcast notification for all users
+// @access  Private/Admin
+router.post('/broadcast', protect, adminOnly, async (req, res) => {
+    try {
+        const { title, message, type, link } = req.body;
+
+        const candidates = await Candidate.find({ /* status: 'active' */ }); // Status field might not exist in all schemas yet, assuming active
+        const interviewers = await Interviewer.find({});
+        const admins = await Admin.find({});
+
+        const allUsers = [...candidates, ...interviewers, ...admins];
+
+        const notifications = allUsers.map(user => ({
+            user: user._id,
+            onModel: user.role === 'admin' ? 'Admin' : (user.role === 'interviewer' ? 'Interviewer' : 'Candidate'),
+            title,
+            message,
+            type: type || 'info',
+            link
+        }));
+
+        await Notification.insertMany(notifications);
+
+        res.status(201).json({ message: `Broadcast sent to ${allUsers.length} users` });
+    } catch (error) {
+        console.error('[BROADCAST_GEN_ERROR]', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });

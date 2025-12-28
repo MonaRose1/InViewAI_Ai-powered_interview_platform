@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
 
-const userSchema = new mongoose.Schema({
+const candidateSchema = new mongoose.Schema({
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true },
     password: { type: String, required: true },
-    role: { type: String, enum: ['admin', 'interviewer', 'candidate'], default: 'candidate' },
+    role: { type: String, default: 'candidate', immutable: true },
 
     // Profile Information
     phone: { type: String },
@@ -13,28 +14,15 @@ const userSchema = new mongoose.Schema({
     bio: { type: String },
     avatar: { type: String },
 
-    // Interviewer-specific
-    expertise: [{ type: String }],
-    defaultDuration: { type: String, default: '60 mins' },
-    autoAccept: { type: Boolean, default: false },
-    maxPerDay: { type: Number, default: 4 },
-    availability: {
-        type: Map,
-        of: [{
-            start: String,
-            end: String
-        }]
-    },
-
     // Candidate-specific
-    resumeUrl: { type: String }, // Legacy field for backward compatibility
-    resumeContent: { type: String }, // Base64 encoded resume content
-    resumeMimeType: { type: String }, // e.g., 'application/pdf'
+    resumeUrl: { type: String },
+    resumeContent: { type: String },
+    resumeMimeType: { type: String },
     resumeFileName: { type: String },
     resumeUploadDate: { type: Date },
     skills: [{ type: String }],
     softSkills: [{ type: String }],
-    experience: [{ type: String }], // Education/Work details
+    experience: [{ type: String }],
     professionalHeadline: { type: String },
     totalYearsExperience: { type: Number },
     topJobRoles: [{ type: String }],
@@ -62,9 +50,19 @@ const userSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
-// Update timestamp on save
-userSchema.pre('save', function () {
+candidateSchema.pre('save', async function (next) {
     this.updatedAt = Date.now();
+    if (!this.isModified('password')) {
+        next();
+        return;
+    }
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
 });
 
-module.exports = mongoose.model('User', userSchema);
+candidateSchema.methods.matchPassword = async function (enteredPassword) {
+    return await bcrypt.compare(enteredPassword, this.password);
+};
+
+module.exports = mongoose.model('Candidate', candidateSchema);

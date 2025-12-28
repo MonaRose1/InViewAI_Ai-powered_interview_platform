@@ -8,8 +8,13 @@ const LogSchema = new mongoose.Schema({
     },
     user: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: false // May be system action or unauthenticated attempt
+        required: false,
+        refPath: 'onModel'
+    },
+    onModel: {
+        type: String,
+        required: false,
+        enum: ['Candidate', 'Interviewer', 'Admin']
     },
     role: {
         type: String, // 'admin', 'interviewer', 'candidate'

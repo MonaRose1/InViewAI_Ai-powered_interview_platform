@@ -34,12 +34,15 @@ const InterviewerApplicants = () => {
             app.job?.title?.toLowerCase().includes(searchQuery.toLowerCase());
 
         if (filter === 'all') return matchesSearch;
+        if (filter === 'pending') {
+            return matchesSearch && (app.status === 'pending' || app.status === 'applied');
+        }
         return matchesSearch && app.status === filter;
     });
 
     const stats = {
         total: applications.length,
-        pending: applications.filter(a => a.status === 'pending').length,
+        pending: applications.filter(a => a.status === 'pending' || a.status === 'applied').length,
         shortlisted: applications.filter(a => a.status === 'shortlisted').length,
         rejected: applications.filter(a => a.status === 'rejected').length
     };
@@ -192,12 +195,6 @@ const InterviewerApplicants = () => {
                                                     {app.job?.title || 'General Application'}
                                                 </p>
                                             </div>
-                                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${app.status === 'pending' ? 'bg-amber-50 text-amber-600' :
-                                                app.status === 'shortlisted' ? 'bg-green-50 text-green-600' :
-                                                    'bg-slate-100 text-slate-600'
-                                                }`}>
-                                                {app.status || 'Pending'}
-                                            </span>
                                         </div>
 
                                         {/* Metadata */}
@@ -218,8 +215,30 @@ const InterviewerApplicants = () => {
 
                                         {/* Action Buttons */}
                                         <div className="flex items-center justify-end gap-2 mt-4">
-                                            {/* Show Shortlist/Reject only if status is pending */}
-                                            {(!app.status || app.status === 'pending') && (
+                                            {/* Status Badge always visible */}
+                                            {app.status === 'shortlisted' && (
+                                                <span className="px-3 py-1 bg-green-50 text-green-600 font-bold text-xs rounded-lg border border-green-200">
+                                                    ✓ Shortlisted
+                                                </span>
+                                            )}
+                                            {app.status === 'rejected' && (
+                                                <span className="px-3 py-1 bg-slate-100 text-slate-500 font-bold text-xs rounded-lg border border-slate-200">
+                                                    ✕ Rejected
+                                                </span>
+                                            )}
+                                            {app.status === 'interview_scheduled' && (
+                                                <span className="px-3 py-1 bg-blue-50 text-blue-600 font-bold text-xs rounded-lg border border-blue-200">
+                                                    Scheduled
+                                                </span>
+                                            )}
+                                            {app.status === 'interviewed' && (
+                                                <span className="px-3 py-1 bg-indigo-50 text-indigo-600 font-bold text-xs rounded-lg border border-indigo-200">
+                                                    Interviewed
+                                                </span>
+                                            )}
+
+                                            {/* Show Shortlist/Reject only if state is pending or applied */}
+                                            {(app.status === 'pending' || app.status === 'applied') && (
                                                 <>
                                                     <button
                                                         onClick={() => handleShortlist(app._id)}
@@ -243,8 +262,8 @@ const InterviewerApplicants = () => {
                                                 View Resume
                                             </button>
 
-                                            {/* Only show Schedule button for shortlisted or pending */}
-                                            {(app.status === 'shortlisted' || !app.status || app.status === 'pending') && (
+                                            {/* Only show Schedule button for shortlisted or pending/applied */}
+                                            {(app.status === 'shortlisted' || app.status === 'pending' || app.status === 'applied') && (
                                                 <button
                                                     onClick={() => handleScheduleInterview(app)}
                                                     className="px-4 py-2 bg-secondary text-white font-bold text-xs rounded-xl hover:scale-105 transition-all shadow-lg shadow-secondary/20"

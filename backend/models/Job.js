@@ -6,7 +6,7 @@ const jobSchema = new mongoose.Schema({
     description: { type: String, required: true },
     requirements: { type: [String] },
     status: { type: String, enum: ['open', 'closed'], default: 'open' },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
     applicantsCount: { type: Number, default: 0 },
     rankingConfig: {
         aiWeight: { type: Number, default: 50 },

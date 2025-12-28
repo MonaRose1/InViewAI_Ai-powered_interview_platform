@@ -54,7 +54,8 @@ const CandidateResume = () => {
 
     const handleDownloadResume = () => {
         if (user?.resumeUrl) {
-            window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${user.resumeUrl}`, '_blank');
+            const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+            window.open(`${baseUrl}${user.resumeUrl}`, '_blank');
         }
     };
 

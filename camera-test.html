@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Camera Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        video {
+            width: 100%;
+            max-width: 640px;
+            background: black;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 4px;
+            background: #333;
+        }
+        .success { background: #4CAF50 !important; }
+        .error { background: #f44336 !important; }
+        .warning { background: #ff9800 !important; }
+        pre {
+            background: #2a2a2a;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🎥 Camera & Microphone Test</h1>
+    <p>This page will help diagnose camera access issues.</p>
+    
+    <button onclick="testCamera()">Test Camera Access</button>
+    <button onclick="listDevices()">List Available Devices</button>
+    
+    <div id="status">
+        <strong>Status:</strong> Click "Test Camera Access" to begin
+    </div>
+    
+    <video id="video" autoplay playsinline muted></video>
+    
+    <h2>Console Output:</h2>
+    <pre id="console"></pre>
+
+    <script>
+        const video = document.getElementById('video');
+        const statusDiv = document.getElementById('status');
+        const consoleDiv = document.getElementById('console');
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const line = `[${timestamp}] ${message}\n`;
+            consoleDiv.textContent += line;
+            console.log(message);
+            
+            if (type === 'success') {
+                statusDiv.className = 'success';
+                statusDiv.innerHTML = `<strong>✅ Success:</strong> ${message}`;
+            } else if (type === 'error') {
+                statusDiv.className = 'error';
+                statusDiv.innerHTML = `<strong>❌ Error:</strong> ${message}`;
+            } else if (type === 'warning') {
+                statusDiv.className = 'warning';
+                statusDiv.innerHTML = `<strong>⚠️ Warning:</strong> ${message}`;
+            }
+        }
+        
+        async function testCamera() {
+            log('Requesting camera and microphone access...');
+            statusDiv.className = '';
+            statusDiv.innerHTML = '<strong>⏳ Testing:</strong> Requesting permissions...';
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: true, 
+                    audio: true 
+                });
+                
+                log('✅ Camera access granted!', 'success');
+                log(`Video tracks: ${stream.getVideoTracks().length}`);
+                log(`Audio tracks: ${stream.getAudioTracks().length}`);
+                
+                stream.getVideoTracks().forEach((track, i) => {
+                    log(`Video Track ${i}: ${track.label} (${track.kind})`);
+                    log(`  - Enabled: ${track.enabled}`);
+                    log(`  - Ready State: ${track.readyState}`);
+                    log(`  - Settings: ${JSON.stringify(track.getSettings())}`);
+                });
+                
+                stream.getAudioTracks().forEach((track, i) => {
+                    log(`Audio Track ${i}: ${track.label} (${track.kind})`);
+                    log(`  - Enabled: ${track.enabled}`);
+                    log(`  - Ready State: ${track.readyState}`);
+                });
+                
+                video.srcObject = stream;
+                log('Video element updated with stream');
+                
+            } catch (err) {
+                log(`❌ Error: ${err.name}`, 'error');
+                log(`Message: ${err.message}`);
+                
+                if (err.name === 'NotAllowedError') {
+                    log('SOLUTION: Click "Allow" when browser asks for camera permission', 'warning');
+                } else if (err.name === 'NotReadableError') {
+                    log('SOLUTION: Camera is in use by another application. Close other tabs/apps.', 'warning');
+                } else if (err.name === 'NotFoundError') {
+                    log('SOLUTION: No camera detected. Check if camera is connected.', 'warning');
+                } else {
+                    log('SOLUTION: Check browser console for more details', 'warning');
+                }
+            }
+        }
+        
+        async function listDevices() {
+            log('Listing available media devices...');
+            
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                log(`Found ${devices.length} devices:`);
+                
+                devices.forEach((device, i) => {
+                    log(`${i + 1}. ${device.kind}: ${device.label || 'Unnamed'} (ID: ${device.deviceId})`);
+                });
+                
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                const audioDevices = devices.filter(d => d.kind === 'audioinput');
+                
+                if (videoDevices.length === 0) {
+                    log('⚠️ No video input devices found!', 'warning');
+                } else {
+                    log(`✅ Found ${videoDevices.length} camera(s)`, 'success');
+                }
+                
+                if (audioDevices.length === 0) {
+                    log('⚠️ No audio input devices found!', 'warning');
+                } else {
+                    log(`✅ Found ${audioDevices.length} microphone(s)`, 'success');
+                }
+                
+            } catch (err) {
+                log(`❌ Error listing devices: ${err.message}`, 'error');
+            }
+        }
+        
+        // Auto-run device list on load
+        window.addEventListener('load', () => {
+            log('Camera Test Page Loaded');
+            log('Browser: ' + navigator.userAgent);
+            log('HTTPS: ' + (location.protocol === 'https:'));
+            log('Localhost: ' + (location.hostname === 'localhost' || location.hostname === '127.0.0.1'));
+            listDevices();
+        });
+    </script>
+</body>
+</html>

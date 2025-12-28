@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../../services/api';
 import { Sliders, Trophy, ArrowUp, ArrowDown, User, Brain } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -16,10 +16,9 @@ const RankingDashboard = ({ jobId }) => {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const token = localStorage.getItem('token');
             const [rankRes, jobRes] = await Promise.all([
-                axios.get(`http://localhost:5000/api/ranking/${jobId}`, { headers: { Authorization: `Bearer ${token}` } }),
-                axios.get(`http://localhost:5000/api/jobs/${jobId}`, { headers: { Authorization: `Bearer ${token}` } })
+                api.get(`/ranking/${jobId}`),
+                api.get(`/jobs/${jobId}`)
             ]);
 
             setCandidates(rankRes.data);
@@ -48,10 +47,7 @@ const RankingDashboard = ({ jobId }) => {
     const applyWeights = async () => {
         try {
             setRecalculating(true);
-            const token = localStorage.getItem('token');
-            await axios.post(`http://localhost:5000/api/ranking/${jobId}/config`, config, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.post(`/ranking/${jobId}/config`, config);
             await fetchData(); // Refresh list
             setRecalculating(false);
         } catch (error) {

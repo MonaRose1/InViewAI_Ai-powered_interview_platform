@@ -39,7 +39,6 @@ const Sidebar = ({ role, className = "" }) => {
             { name: 'Audit Logs', path: '/admin/logs', icon: <FileText size={20} /> },
             { name: 'Exports', path: '/admin/exports', icon: <Download size={20} /> },
 
-            { name: 'AI Config', path: '/admin/settings/ai', icon: <Cpu size={20} /> },
             { name: 'Profile', path: '/admin/profile', icon: <User size={20} /> },
         ],
         interviewer: [

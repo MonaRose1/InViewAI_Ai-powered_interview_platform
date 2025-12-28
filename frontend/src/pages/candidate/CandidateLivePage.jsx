@@ -29,7 +29,8 @@ const CandidateLivePage = () => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef
+        socketRef,
+        socket
     } = useWebRTC(id, userId);
 
     const [timeLeft, setTimeLeft] = useState(1800);
@@ -37,10 +38,9 @@ const CandidateLivePage = () => {
 
     const [questions, setQuestions] = useState([]); // Questions from interviewer
     const [answers, setAnswers] = useState({}); // { questionId: answer }
-    const [code, setCode] = useState('// JavaScript Interview\n\nfunction solution() {\n  return "Hello World";\n}');
-    const [output, setOutput] = useState('');
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [loadingQuestions, setLoadingQuestions] = useState(true);
 
     // Chat State
     const [messages, setMessages] = useState([]);
@@ -57,54 +57,46 @@ const CandidateLivePage = () => {
     }, [messages]);
 
     useEffect(() => {
-        if (!socketRef.current) return;
-        const socket = socketRef.current;
+        if (!socket) return;
 
         const handleQuestions = (receivedQuestions) => {
-            setQuestions(receivedQuestions);
-            const initialAnswers = {};
+            console.log("Received questions from interviewer:", receivedQuestions);
+            setQuestions(prev => [...prev, ...receivedQuestions]);
+            const newAnswers = {};
             receivedQuestions.forEach(q => {
-                initialAnswers[q.questionId] = '';
+                newAnswers[q.questionId] = '';
             });
-            setAnswers(initialAnswers);
+            setAnswers(prev => ({ ...prev, ...newAnswers }));
             setIsSubmitted(false);
             setActiveTab('questions');
         };
 
-        const handleCodeUpdate = (newCode) => setCode(newCode);
-        const handleCodeOutput = (out) => {
-            setOutput(out);
-            setActiveTab('code');
-        };
         const handleEnd = () => {
             alert("The interview session has been ended by the interviewer.");
             navigate('/candidate/dashboard');
         };
+
         const handleChat = (msg) => {
             setMessages(prev => [...prev, msg]);
             if (activeTab !== 'chat') setHasNewMessage(true);
         };
 
         socket.on('receive-questions', handleQuestions);
-        socket.on('code-update', handleCodeUpdate);
-        socket.on('code-output', handleCodeOutput);
         socket.on('interview-ended', handleEnd);
         socket.on('receive-chat-message', handleChat);
 
         return () => {
             socket.off('receive-questions', handleQuestions);
-            socket.off('code-update', handleCodeUpdate);
-            socket.off('code-output', handleCodeOutput);
             socket.off('interview-ended', handleEnd);
             socket.off('receive-chat-message', handleChat);
         };
-    }, [socketRef, navigate, activeTab, id, userId]);
+    }, [socket, navigate, activeTab]);
 
     const handleSendMessage = (e) => {
         e.preventDefault();
-        if (!newMessage.trim() || !socketRef.current) return;
+        if (!newMessage.trim() || !socket) return;
 
-        socketRef.current.emit('send-chat-message', {
+        socket.emit('send-chat-message', {
             roomId: id,
             message: newMessage,
             sender: {
@@ -116,51 +108,54 @@ const CandidateLivePage = () => {
         setNewMessage('');
     };
 
-    const handleCodeChange = (newCode) => {
-        setCode(newCode);
-        if (socketRef.current) {
-            socketRef.current.emit('code-change', { roomId: id, code: newCode });
-        }
-    };
-
-    const handleRunCode = () => {
-        if (socketRef.current) {
-            setOutput('> Initializing execution context...');
-            socketRef.current.emit('run-code', { roomId: id, code, language: 'javascript' });
-        }
-    };
-
     const handleAnswerChange = (qId, val) => {
         setAnswers(prev => ({ ...prev, [qId]: val }));
     };
 
     const submitFinalAnswers = () => {
+        console.log("[SUBMIT] Starting submission process...");
         const unanswered = questions.filter(q => !answers[q.questionId]);
         if (unanswered.length > 0) {
-            if (!window.confirm(`You have ${unanswered.length} unanswered questions. Submit anyway?`)) return;
+            if (!window.confirm(`You have ${unanswered.length} unanswered questions. Submit anyway?`)) {
+                console.log("[SUBMIT] User cancelled submission due to unanswered questions.");
+                return;
+            }
         }
 
         setIsSubmitting(true);
-        // Simulate a small delay for premium feel
-        setTimeout(() => {
+        try {
             const formattedAnswers = Object.keys(answers).map(id => ({
                 questionId: id,
                 answer: answers[id]
             }));
 
-            socketRef.current.emit('submit-answers', {
+            console.log("[SUBMIT] Emitting answers:", formattedAnswers);
+            if (!socket) {
+                console.error("[SUBMIT] Socket not available!");
+                alert("Connection lost. Please refresh the page.");
+                setIsSubmitting(false);
+                return;
+            }
+
+            socket.emit('submit-answers', {
                 roomId: id,
                 answers: formattedAnswers
             });
 
+            console.log("[SUBMIT] Answers emitted to room:", id);
             setIsSubmitted(true);
+        } catch (err) {
+            console.error("[SUBMIT] Error during submission:", err);
+            alert("Failed to submit. Please try again.");
+        } finally {
             setIsSubmitting(false);
-        }, 1000);
+        }
     };
 
     useEffect(() => {
         const fetchInterview = async () => {
             try {
+                setLoadingQuestions(true);
                 const { data } = await api.get(`/interviews/${id}`);
                 setInterviewData(data);
 
@@ -188,6 +183,8 @@ const CandidateLivePage = () => {
                 }
             } catch (err) {
                 console.error("Failed to sync interview data", err);
+            } finally {
+                setLoadingQuestions(false);
             }
         };
         fetchInterview();
@@ -199,39 +196,31 @@ const CandidateLivePage = () => {
             setTimeLeft(prev => Math.max(0, prev - 1));
         }, 1000);
 
-        // AI Frame Capture (Batching: every 5 seconds)
-        const captureInterval = setInterval(() => {
-            if (localVideoRef.current && localVideoRef.current.srcObject) {
-                captureAndSendFrame();
-            }
-        }, 5000);
-
         return () => {
             clearInterval(timer);
-            clearInterval(captureInterval);
         };
     }, []);
 
     // AI Frame Capture (Batching: every 3 seconds)
     useEffect(() => {
         const captureInterval = setInterval(() => {
-            if (localVideoRef.current && localVideoRef.current.srcObject && socketRef.current) {
+            if (localVideoRef.current && localVideoRef.current.srcObject && socket) {
                 captureAndSendFrame();
             }
         }, 3000);
 
         return () => clearInterval(captureInterval);
-    }, [socketRef]);
+    }, [socket]);
 
     const captureAndSendFrame = () => {
-        if (!localVideoRef.current || !canvasRef.current) return;
+        if (!localVideoRef.current || !canvasRef.current || !socket) return;
 
         const context = canvasRef.current.getContext('2d');
         context.drawImage(localVideoRef.current, 0, 0, 640, 480);
         const frameData = canvasRef.current.toDataURL('image/jpeg', 0.5);
 
         // Send to Node.js via Socket.IO
-        socketRef.current.emit('analyze-frame', {
+        socket.emit('analyze-frame', {
             roomId: id,
             image_data: frameData
         });
@@ -314,27 +303,23 @@ const CandidateLivePage = () => {
                 {/* Tabs */}
                 <div className="h-12 bg-white flex items-center px-8 border-b border-slate-200 gap-8">
                     <button
-                        onClick={() => setActiveTab('questions')}
-                        className={`h-full flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === 'questions' ? 'text-secondary' : 'text-slate-400'
+                        onClick={() => {
+                            console.log('[TAB] Switching to questions');
+                            setActiveTab('questions');
+                        }}
+                        className={`h-full flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all relative cursor-pointer ${activeTab === 'questions' ? 'text-secondary' : 'text-slate-400 hover:text-slate-600'
                             }`}
                     >
                         <FileText size={14} /> Questions
                         {activeTab === 'questions' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary rounded-t-full" />}
                     </button>
                     <button
-                        onClick={() => setActiveTab('code')}
-                        className={`h-full flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === 'code' ? 'text-secondary' : 'text-slate-400'
-                            }`}
-                    >
-                        <Code size={14} /> Technical Workspace
-                        {activeTab === 'code' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-secondary rounded-t-full" />}
-                    </button>
-                    <button
                         onClick={() => {
+                            console.log('[TAB] Switching to chat');
                             setActiveTab('chat');
                             setHasNewMessage(false);
                         }}
-                        className={`h-full flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all relative ${activeTab === 'chat' ? 'text-secondary' : 'text-slate-400'
+                        className={`h-full flex items-center gap-2 text-[10px] font-black uppercase tracking-widest transition-all relative cursor-pointer ${activeTab === 'chat' ? 'text-secondary' : 'text-slate-400 hover:text-slate-600'
                             }`}
                     >
                         <MessageSquare size={14} /> Chat Box
@@ -346,7 +331,12 @@ const CandidateLivePage = () => {
                 <div className="flex-1 overflow-hidden relative">
                     {/* Questions View */}
                     <div className={`absolute inset-0 transition-all duration-500 transform ${activeTab === 'questions' ? 'translate-x-0 opacity-100 ring-0' : '-translate-x-full opacity-0 pointer-events-none'}`}>
-                        {questions.length === 0 ? (
+                        {loadingQuestions ? (
+                            <div className="h-full flex flex-col items-center justify-center p-12 text-center">
+                                <Loader2 className="animate-spin text-secondary mb-4" size={32} />
+                                <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing Questions...</p>
+                            </div>
+                        ) : questions.length === 0 ? (
                             <div className="h-full flex flex-col items-center justify-center p-12 text-center space-y-4">
                                 <div className="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center animate-pulse">
                                     <Loader2 className="text-slate-300 animate-spin" size={32} />
@@ -431,57 +421,6 @@ const CandidateLivePage = () => {
                                 </div>
                             </div>
                         )}
-                    </div>
-
-                    {/* Technical Workspace View */}
-                    <div className={`absolute inset-0 transition-all duration-500 transform ${activeTab === 'code' ? 'translate-x-0 opacity-100' : activeTab === 'questions' ? 'translate-x-full opacity-0 pointer-events-none' : '-translate-x-full opacity-0 pointer-events-none'}`}>
-                        <div className="h-full flex flex-col bg-[#1e1e1e]">
-                            {/* Editor Toolbar */}
-                            <div className="h-10 bg-[#252526] border-b border-white/5 flex items-center justify-between px-4 text-xs text-gray-400">
-                                <div className="flex items-center gap-4">
-                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-md text-gray-200">
-                                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
-                                        <span className="font-bold">solution.js</span>
-                                    </div>
-                                    <button
-                                        onClick={handleRunCode}
-                                        className="flex items-center gap-2 px-3 py-1 bg-green-500 hover:bg-green-600 text-black text-[10px] font-black rounded-md transition-all active:scale-95 shadow-lg shadow-green-500/20"
-                                    >
-                                        <Play size={10} fill="currentColor" /> RUN
-                                    </button>
-                                </div>
-                                <span className="text-[10px] font-black uppercase text-secondary">JavaScript</span>
-                            </div>
-
-                            <div className="flex-1 relative font-mono text-sm overflow-hidden flex">
-                                <div className="w-12 h-full bg-[#1e1e1e] border-r border-white/5 flex flex-col items-center pt-4 text-gray-600 select-none shrink-0">
-                                    {Array.from({ length: 30 }).map((_, i) => (
-                                        <div key={i} className="h-[1.6rem] leading-[1.6rem]">{i + 1}</div>
-                                    ))}
-                                </div>
-                                <textarea
-                                    className="flex-1 h-full bg-[#1e1e1e] text-indigo-100 pl-4 pr-4 pt-4 outline-none resize-none spellcheck-false custom-scrollbar leading-[1.6rem]"
-                                    value={code}
-                                    onChange={(e) => handleCodeChange(e.target.value)}
-                                    spellCheck="false"
-                                />
-
-                                {/* Output Terminal */}
-                                <div className="absolute bottom-6 left-16 right-6 h-1/3 bg-black/60 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-2xl">
-                                    <div className="h-8 bg-white/5 border-b border-white/5 flex items-center justify-between px-4 shrink-0">
-                                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Execution Output</span>
-                                        <Play size={10} className="text-green-500" />
-                                    </div>
-                                    <div className="flex-1 p-4 overflow-y-auto font-mono text-xs text-green-400 leading-relaxed custom-scrollbar">
-                                        {output ? (
-                                            <pre className="whitespace-pre-wrap">{output}</pre>
-                                        ) : (
-                                            <div className="text-gray-600 italic">No output yet. Codes result will appear here.</div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </div>
                     {/* Chat Box View */}
                     <div className={`absolute inset-0 transition-all duration-500 transform ${activeTab === 'chat' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>

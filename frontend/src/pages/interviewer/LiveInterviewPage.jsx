@@ -20,7 +20,8 @@ const LiveInterviewPage = () => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef
+        socketRef,
+        socket
     } = useWebRTC(id, userId);
 
     const [aiData, setAiData] = useState({
@@ -32,8 +33,6 @@ const LiveInterviewPage = () => {
 
     const [interviewDetails, setInterviewDetails] = useState(null);
     const [duration, setDuration] = useState(0);
-    const [code, setCode] = useState('// JavaScript Interview\n\nfunction solution() {\n  return "Hello World";\n}');
-    const [output, setOutput] = useState('');
     const [notes, setNotes] = useState('');
     const [sessionQuestions, setSessionQuestions] = useState([]);
     const [analyzingIds, setAnalyzingIds] = useState([]);
@@ -46,13 +45,21 @@ const LiveInterviewPage = () => {
         comments: ''
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [selectedQuestions, setSelectedQuestions] = useState([]);
+    const [forceShowBank, setForceShowBank] = useState(false);
+    const [loadingData, setLoadingData] = useState(true);
 
     // Chat State
     const [messages, setMessages] = useState([]);
     const [newMessage, setNewMessage] = useState('');
-    const [workspaceTab, setWorkspaceTab] = useState('questions'); // 'questions', 'code', 'chat'
+    const [workspaceTab, setWorkspaceTab] = useState('questions'); // 'questions', 'chat'
     const [hasNewMessage, setHasNewMessage] = useState(false);
     const chatEndRef = React.useRef(null);
+
+    const workspaceTabRef = React.useRef(workspaceTab);
+    useEffect(() => {
+        workspaceTabRef.current = workspaceTab;
+    }, [workspaceTab]);
 
     const scrollToBottom = () => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -66,6 +73,7 @@ const LiveInterviewPage = () => {
     useEffect(() => {
         const fetchInterview = async () => {
             try {
+                setLoadingData(true);
                 const { data } = await api.get(`/interviews/${id}`);
                 setInterviewDetails(data);
                 if (data.notes) setNotes(data.notes);
@@ -74,6 +82,8 @@ const LiveInterviewPage = () => {
                 }
             } catch (err) {
                 console.error("Failed to fetch interview data", err);
+            } finally {
+                setLoadingData(false);
             }
         };
         fetchInterview();
@@ -86,6 +96,30 @@ const LiveInterviewPage = () => {
         }, 1000);
         return () => clearInterval(timer);
     }, []);
+
+    // Load selected questions from localStorage
+    useEffect(() => {
+        const saved = localStorage.getItem(`selected_questions_${id}`);
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                    setSelectedQuestions(parsed);
+                }
+            } catch (err) {
+                console.error("Failed to parse saved questions", err);
+            }
+        }
+    }, [id]);
+
+    // Save selected questions to localStorage
+    useEffect(() => {
+        if (selectedQuestions.length > 0) {
+            localStorage.setItem(`selected_questions_${id}`, JSON.stringify(selectedQuestions));
+        } else {
+            localStorage.removeItem(`selected_questions_${id}`);
+        }
+    }, [selectedQuestions, id]);
 
     const formatDuration = (seconds) => {
         const hrs = Math.floor(seconds / 3600);
@@ -109,12 +143,16 @@ const LiveInterviewPage = () => {
     };
 
     useEffect(() => {
-        if (!socketRef.current) return;
-        const socket = socketRef.current;
+        if (!socket) return;
 
-        const handleCodeUpdate = (newCode) => setCode(newCode);
-        const handleCodeOutput = (out) => setOutput(out);
-        const handleAnswers = (questions) => setSessionQuestions(questions);
+        const handleAnswers = (updatedQuestions) => {
+            console.log("Answers received via socket:", updatedQuestions);
+            // Only update if we actually got questions to avoid clearing the list
+            if (updatedQuestions && Array.isArray(updatedQuestions) && updatedQuestions.length > 0) {
+                setSessionQuestions(updatedQuestions);
+            }
+        };
+
         const handleAiResult = (data) => {
             setAiData(prev => {
                 const newFlags = data.face_detected ? prev.flags : [...prev.flags, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), text: 'Face focus lost' }];
@@ -127,39 +165,23 @@ const LiveInterviewPage = () => {
                 };
             });
         };
+
         const handleChat = (msg) => {
             setMessages(prev => [...prev, msg]);
-            if (workspaceTab !== 'chat') setHasNewMessage(true);
+            // Use ref to check current tab without re-triggering this effect
+            if (workspaceTabRef.current !== 'chat') setHasNewMessage(true);
         };
 
-        socket.on('code-update', handleCodeUpdate);
-        socket.on('code-output', handleCodeOutput);
         socket.on('answers-received', handleAnswers);
         socket.on('ai-result', handleAiResult);
         socket.on('receive-chat-message', handleChat);
 
         return () => {
-            socket.off('code-update', handleCodeUpdate);
-            socket.off('code-output', handleCodeOutput);
             socket.off('answers-received', handleAnswers);
             socket.off('ai-result', handleAiResult);
             socket.off('receive-chat-message', handleChat);
         };
-    }, [socketRef, workspaceTab, userId, id]);
-
-    const handleCodeChange = (value) => {
-        setCode(value);
-        if (socketRef.current) {
-            socketRef.current.emit('code-change', { roomId: id, code: value });
-        }
-    };
-
-    const handleRunCode = () => {
-        if (socketRef.current) {
-            setOutput('> Initializing execution context...');
-            socketRef.current.emit('run-code', { roomId: id, code, language: 'javascript' });
-        }
-    };
+    }, [socket]); // Removed workspaceTab dependency to prevent re-attaching listeners
 
     const analyzeCandidateAnswer = async (qIndex) => {
         const question = sessionQuestions[qIndex];
@@ -167,9 +189,10 @@ const LiveInterviewPage = () => {
 
         setAnalyzingIds(prev => [...prev, question.questionId]);
         try {
-            const { data } = await api.post('/ai/evaluate-answer', {
+            const { data } = await api.post(`/interviews/${id}/evaluate-question`, {
                 question: question.text,
-                answer: question.candidateAnswer
+                answer: question.candidateAnswer,
+                jobRole: interviewDetails?.job?.title || 'Software Engineer'
             });
 
             const updatedQuestions = [...sessionQuestions];
@@ -221,8 +244,8 @@ const LiveInterviewPage = () => {
             await api.post(`/interviews/${id}/end`);
 
             // Notify candidate via socket
-            if (socketRef.current) {
-                socketRef.current.emit('end-interview', { roomId: id });
+            if (socket) {
+                socket.emit('end-interview', { roomId: id });
             }
 
             window.location.href = `/interviewer/interviews/${id}/result`;
@@ -277,7 +300,7 @@ const LiveInterviewPage = () => {
                     <div className="hidden lg:flex items-center gap-2 px-6 border-l border-white/10">
                         <Calendar size={14} className="text-gray-500" />
                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">
-                            Started {formatDateTime(interviewDetails?.scheduledAt)}
+                            Started {formatDateTime(interviewDetails?.scheduledTime)}
                         </span>
                     </div>
                 </div>
@@ -480,13 +503,6 @@ const LiveInterviewPage = () => {
                     <div className="h-12 bg-white flex items-center justify-between px-8 border-b border-slate-200 z-10 shrink-0">
                         <div className="flex items-center gap-6">
                             <button
-                                className={`text-[10px] font-black uppercase tracking-widest pb-3 transition-all relative ${workspaceTab === 'code' ? 'text-secondary' : 'text-slate-400'}`}
-                                onClick={() => setWorkspaceTab('code')}
-                            >
-                                Technical Workspace
-                                {workspaceTab === 'code' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-secondary rounded-full"></div>}
-                            </button>
-                            <button
                                 className={`text-[10px] font-black uppercase tracking-widest pb-3 transition-all relative ${workspaceTab === 'questions' ? 'text-secondary' : 'text-slate-400'}`}
                                 onClick={() => setWorkspaceTab('questions')}
                             >
@@ -508,13 +524,6 @@ const LiveInterviewPage = () => {
 
                         <div className="flex items-center gap-3">
                             <span className="px-2.5 py-1 bg-green-50 text-green-600 text-[9px] font-black rounded-lg border border-green-100 uppercase">Synced</span>
-                            <button
-                                onClick={handleRunCode}
-                                className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center text-white hover:bg-secondary transition-all cursor-pointer shadow-lg shadow-black/10 active:scale-90"
-                                title="Run Code"
-                            >
-                                <Play size={14} fill="currentColor" />
-                            </button>
                         </div>
                     </div>
 
@@ -522,13 +531,40 @@ const LiveInterviewPage = () => {
                     <div className="flex-1 overflow-hidden relative">
                         {/* Question Session View */}
                         <div className={`absolute inset-0 transition-all duration-500 transform ${workspaceTab === 'questions' ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}`}>
-                            {sessionQuestions.length === 0 ? (
-                                <InterviewerQuestionBank
-                                    questions={sessionQuestions}
-                                    setQuestions={setSessionQuestions}
-                                    socket={socketRef.current}
-                                    roomId={id}
-                                />
+                            {loadingData ? (
+                                <div className="h-full flex flex-col items-center justify-center p-12 text-center">
+                                    <Loader2 className="animate-spin text-secondary mb-4" size={32} />
+                                    <p className="text-slate-400 font-bold uppercase tracking-widest text-xs">Syncing Session...</p>
+                                </div>
+                            ) : sessionQuestions.length === 0 || forceShowBank ? (
+                                <div className="h-full flex flex-col">
+                                    {forceShowBank && (
+                                        <div className="bg-white px-8 py-3 border-b border-slate-100 flex justify-between items-center">
+                                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Adding questions to current session</span>
+                                            <button
+                                                onClick={() => setForceShowBank(false)}
+                                                className="text-[10px] font-black text-secondary uppercase hover:underline"
+                                            >
+                                                Back to Monitoring
+                                            </button>
+                                        </div>
+                                    )}
+                                    <div className="flex-1 overflow-hidden">
+                                        <InterviewerQuestionBank
+                                            questions={sessionQuestions}
+                                            setQuestions={(qs) => {
+                                                setSessionQuestions(prev => [...prev, ...qs]);
+                                                setSelectedQuestions([]); // Clear selection when sent
+                                                setForceShowBank(false);
+                                                localStorage.removeItem(`selected_questions_${id}`);
+                                            }}
+                                            selectedQuestions={selectedQuestions}
+                                            setSelectedQuestions={setSelectedQuestions}
+                                            socket={socket}
+                                            roomId={id}
+                                        />
+                                    </div>
+                                </div>
                             ) : (
                                 <div className="flex flex-col h-full bg-slate-50">
                                     <div className="flex-1 overflow-y-auto p-10 space-y-8 custom-scrollbar">
@@ -539,7 +575,7 @@ const LiveInterviewPage = () => {
                                                     <p className="text-sm text-slate-500 font-medium">Monitoring candidate's real-time progress</p>
                                                 </div>
                                                 <button
-                                                    onClick={() => setSessionQuestions([])}
+                                                    onClick={() => setForceShowBank(true)}
                                                     className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-400 hover:text-secondary hover:border-secondary/30 transition-all uppercase tracking-widest"
                                                 >
                                                     Add More Questions
@@ -547,7 +583,7 @@ const LiveInterviewPage = () => {
                                             </div>
 
                                             {sessionQuestions.map((q, idx) => (
-                                                <div key={q.questionId || q._id || idx} className="bg-white rounded-[32px] p-8 shadow-2xl shadow-slate-200/50 border border-slate-100 space-y-6 group hover:border-secondary/20 transition-all animate-in slide-in-from-bottom-5 fade-in duration-500">
+                                                <div key={q.questionId || q._id || idx} className="bg-white rounded-[32px] p-8 shadow-2xl shadow-slate-200/50 border border-slate-100 space-y-6 group hover:border-secondary/20 transition-all">
                                                     <div className="flex justify-between items-start">
                                                         <div className="space-y-2">
                                                             <div className="flex items-center gap-3">
@@ -643,57 +679,6 @@ const LiveInterviewPage = () => {
                             )}
                         </div>
 
-                        {/* Technical Workspace View */}
-                        <div className={`absolute inset-0 transition-all duration-500 transform ${workspaceTab === 'code' ? 'translate-x-0 opacity-100' : workspaceTab === 'questions' ? 'translate-x-full opacity-0 pointer-events-none' : '-translate-x-full opacity-0 pointer-events-none'}`}>
-                            <div className="flex flex-col h-full bg-[#1e1e1e]">
-                                {/* Editor Toolbar */}
-                                <div className="h-10 bg-[#252526] border-b border-white/5 flex items-center justify-between px-4 text-xs">
-                                    <div className="flex items-center gap-4 text-gray-400">
-                                        <div className="flex items-center gap-1.5 px-2 py-1 bg-white/5 rounded-md text-gray-200">
-                                            <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
-                                            <span className="font-bold">solution.js</span>
-                                        </div>
-                                        <span className="hover:text-white cursor-pointer transition-colors">Candidate Sandbox</span>
-                                    </div>
-                                    <div className="flex items-center gap-4 text-[10px] font-black uppercase text-gray-500">
-                                        <span>UTF-8</span>
-                                        <span className="text-secondary">JavaScript</span>
-                                    </div>
-                                </div>
-
-                                <div className="flex-1 relative font-mono text-sm group">
-                                    <div className="absolute top-0 left-0 w-12 h-full bg-[#1e1e1e] border-r border-white/5 flex flex-col items-center pt-4 text-gray-600 select-none">
-                                        {Array.from({ length: 20 }).map((_, i) => (
-                                            <div key={i} className="h-[1.6rem] leading-[1.6rem]">{i + 1}</div>
-                                        ))}
-                                    </div>
-                                    <textarea
-                                        className="w-full h-full bg-[#1e1e1e] text-indigo-100 pl-16 pr-4 pt-4 outline-none resize-none spellcheck-false custom-scrollbar leading-[1.6rem]"
-                                        value={code}
-                                        onChange={(e) => handleCodeChange(e.target.value)}
-                                        spellCheck="false"
-                                    />
-                                    {/* Glass Output Terminal */}
-                                    <div className="absolute bottom-6 left-16 right-6 h-1/3 bg-black/40 backdrop-blur-xl border border-white/10 rounded-2xl overflow-hidden flex flex-col shadow-2xl transition-all group-hover:bg-black/60">
-                                        <div className="h-8 bg-white/5 border-b border-white/5 flex items-center justify-between px-4 shrink-0">
-                                            <span className="text-[9px] font-black text-gray-400 uppercase tracking-widest">Execution Terminal</span>
-                                            <div className="flex items-center gap-2">
-                                                <div className="w-2 h-2 rounded-full bg-red-500/50"></div>
-                                                <div className="w-2 h-2 rounded-full bg-yellow-500/50"></div>
-                                                <div className="w-2 h-2 rounded-full bg-green-500/50"></div>
-                                            </div>
-                                        </div>
-                                        <div className="flex-1 p-4 overflow-y-auto font-mono text-xs text-green-500/90 leading-relaxed custom-scrollbar">
-                                            {output ? (
-                                                <pre className="whitespace-pre-wrap">{output}</pre>
-                                            ) : (
-                                                <div className="text-gray-600 italic">Ready for execution. Awaiting candidate code run...</div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
 
                         {/* Chat Box View */}
                         <div className={`absolute inset-0 transition-all duration-500 transform ${workspaceTab === 'chat' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
@@ -722,8 +707,8 @@ const LiveInterviewPage = () => {
 
                                 <form onSubmit={(e) => {
                                     e.preventDefault();
-                                    if (!newMessage.trim() || !socketRef.current) return;
-                                    socketRef.current.emit('send-chat-message', {
+                                    if (!newMessage.trim() || !socket) return;
+                                    socket.emit('send-chat-message', {
                                         roomId: id,
                                         message: newMessage,
                                         sender: { id: userId, name: user?.name || 'Interviewer', role: 'interviewer' }
@@ -734,7 +719,7 @@ const LiveInterviewPage = () => {
                                         <input
                                             type="text"
                                             placeholder="Type your message to the candidate..."
-                                            className="w-full pl-6 pr-16 py-4 bg-white border-2 border-slate-100 rounded-2xl text-sm font-medium focus:ring-4 focus:ring-secondary/5 focus:border-secondary outline-none transition-all shadow-sm"
+                                            className="w-full pl-6 pr-16 py-4 bg-slate-100 border-2 border-slate-200 rounded-2xl text-sm font-medium focus:bg-white focus:ring-4 focus:ring-secondary/10 focus:border-secondary outline-none transition-all shadow-sm text-slate-800 placeholder-slate-400"
                                             value={newMessage}
                                             onChange={(e) => setNewMessage(e.target.value)}
                                         />

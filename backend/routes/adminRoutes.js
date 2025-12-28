@@ -25,7 +25,8 @@ router.put('/interviews/:id', protect, adminOnly, updateInterview);
 router.delete('/interviews/:id', protect, adminOnly, deleteInterview);
 
 // Data Export
-const { exportData } = require('../controllers/adminController');
+const { exportData, exportSystemLogs } = require('../controllers/adminController');
 router.get('/export/:type', protect, adminOnly, exportData);
+router.get('/logs/export', protect, adminOnly, exportSystemLogs);
 
 module.exports = router;

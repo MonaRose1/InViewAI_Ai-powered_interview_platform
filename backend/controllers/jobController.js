@@ -8,7 +8,8 @@ const getJobs = async (req, res) => {
         const jobs = await Job.find().populate('createdBy', 'name');
         res.json(jobs);
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('[GET_JOBS_ERROR]', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
@@ -25,7 +26,8 @@ const getJobById = async (req, res) => {
             res.status(404).json({ message: 'Job not found' });
         }
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('[GET_JOB_BY_ID_ERROR]', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 

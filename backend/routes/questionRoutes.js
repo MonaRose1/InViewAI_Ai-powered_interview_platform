@@ -29,7 +29,8 @@ router.post('/', protect, authorize('interviewer', 'admin'), async (req, res) =>
             correctAnswer,
             category,
             difficulty,
-            createdBy: req.user._id
+            createdBy: req.user._id,
+            onModel: req.user.role === 'admin' ? 'Admin' : 'Interviewer'
         });
         res.status(201).json(question);
     } catch (error) {
