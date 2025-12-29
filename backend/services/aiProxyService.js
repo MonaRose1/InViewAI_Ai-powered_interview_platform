@@ -29,7 +29,21 @@ const evaluateAnswer = async (question, answer, jobRole = "Software Engineer") =
     }
 };
 
+const evaluateBehavior = async (sessionId, jobRole = "Software Engineer") => {
+    try {
+        const response = await axios.post(`${AI_SERVICE_URL}/api/evaluate-behavior`, {
+            session_id: sessionId,
+            job_role: jobRole
+        });
+        return response.data;
+    } catch (error) {
+        console.error('AI Behavior Evaluation Error:', error.message);
+        return null;
+    }
+};
+
 module.exports = {
     analyzeFrame,
-    evaluateAnswer
+    evaluateAnswer,
+    evaluateBehavior
 };

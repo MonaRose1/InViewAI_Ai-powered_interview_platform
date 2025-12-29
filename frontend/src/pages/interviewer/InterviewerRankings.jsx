@@ -33,7 +33,9 @@ const InterviewerRankings = () => {
         try {
             setLoadingRankings(true);
             const { data } = await api.get(`/ranking/${jobId}`);
-            setRankings(data);
+            // Filter out unknown/invalid candidates
+            const validRankings = data.filter(app => app.candidate && app.candidate.name && app.candidate.name !== 'Unknown');
+            setRankings(validRankings);
             setSelectedJob(jobId);
         } catch (err) {
             console.error('Failed to fetch rankings', err);
@@ -42,14 +44,20 @@ const InterviewerRankings = () => {
         }
     };
 
-    const handleScheduleInterview = (app) => {
-        setSelectedApp(app);
-        setShowScheduleModal(true);
+    const handleHireCandidate = async (appId) => {
+        if (!window.confirm('Are you sure you want to hire this candidate?')) return;
+        try {
+            await api.put(`/applications/${appId}/status`, { status: 'hired' });
+            // Refresh rankings
+            fetchRankings(selectedJob);
+        } catch (err) {
+            console.error('Failed to hire candidate', err);
+            alert('Failed to hire candidate. Please try again.');
+        }
     };
 
     const filteredJobs = jobs.filter(job =>
-        job.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.department?.toLowerCase().includes(searchQuery.toLowerCase())
+        job.title?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     if (selectedJob && rankings.length >= 0) {
@@ -66,7 +74,7 @@ const InterviewerRankings = () => {
                     </button>
                     <div>
                         <h1 className="text-2xl font-black text-slate-800">{job?.title}</h1>
-                        <p className="text-slate-500 font-medium">{job?.department} • {job?.location}</p>
+                        <p className="text-slate-500 font-medium">{job?.location}</p>
                     </div>
                 </div>
 
@@ -131,10 +139,13 @@ const InterviewerRankings = () => {
                                                 View Profile
                                             </Link>
                                             <button
-                                                onClick={() => handleScheduleInterview(app)}
-                                                className="px-6 py-2 bg-secondary text-white font-bold rounded-xl hover:scale-105 transition-all shadow-lg shadow-secondary/20 text-xs"
+                                                onClick={() => handleHireCandidate(app._id)}
+                                                disabled={app.status === 'hired'}
+                                                className={`px-6 py-2 font-bold rounded-xl transition-all shadow-lg text-xs ${app.status === 'hired'
+                                                    ? 'bg-green-100 text-green-600 shadow-none cursor-default'
+                                                    : 'bg-secondary text-white hover:scale-105 shadow-secondary/20'}`}
                                             >
-                                                Schedule
+                                                {app.status === 'hired' ? 'Hired' : 'Hire'}
                                             </button>
                                         </div>
                                     </div>
@@ -204,7 +215,7 @@ const InterviewerRankings = () => {
                                 {job.title}
                             </h3>
                             <p className="text-sm text-slate-500 font-medium mb-4">
-                                {job.department} • {job.location}
+                                {job.location || 'Remote'}
                             </p>
 
                             <div className="flex items-center gap-4 text-xs font-bold text-slate-400 uppercase">

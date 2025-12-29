@@ -15,30 +15,54 @@ const getModelByRole = (role) => {
     return null;
 };
 
-// Multer Config
+// Multer Config (Memory Storage for MongoDB)
 const storage = multer.memoryStorage();
 const upload = multer({
     storage,
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-        const filetypes = /pdf|doc|docx/;
+        const filetypes = /pdf|doc|docx|jpg|jpeg|png/;
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
         const mimetype = filetypes.test(file.mimetype);
         if (mimetype && extname) return cb(null, true);
-        cb(new Error('Only .pdf, .doc and .docx files are allowed!'));
+        cb(new Error('Only .pdf, .doc, .docx, .jpg, .jpeg, .png files are allowed!'));
+    }
+});
+
+// @route   GET /api/profile/resume-bin/:id (Candidate only)
+router.get('/resume-bin/:id', async (req, res) => {
+    try {
+        const user = await Candidate.findById(req.params.id);
+        if (!user || !user.resumeData) return res.status(404).send('Resume not found');
+
+        res.set('Content-Type', user.resumeMimeType || 'application/pdf');
+        res.send(user.resumeData);
+    } catch (error) {
+        res.status(500).send('Server error');
+    }
+});
+
+// @route   GET /api/profile/avatar-bin/:role/:id
+router.get('/avatar-bin/:role/:id', async (req, res) => {
+    try {
+        const Model = getModelByRole(req.params.role);
+        if (!Model) return res.status(400).send('Invalid role');
+
+        const user = await Model.findById(req.params.id);
+        if (!user || !user.avatarData) return res.status(404).send('Avatar not found');
+
+        res.set('Content-Type', user.avatarMimeType || 'image/jpeg');
+        res.send(user.avatarData);
+    } catch (error) {
+        res.status(500).send('Server error');
     }
 });
 
 // @route   GET /api/profile
-// @access  Private
 router.get('/', protect, async (req, res) => {
     try {
-        // req.user is already populated by protect middleware
-        // But if we need fresh data:
         const Model = getModelByRole(req.user.role);
-        if (!Model) return res.status(400).json({ message: 'User role unknown' });
-
-        const user = await Model.findById(req.user.id).select('-password -activeSessions');
+        const user = await Model.findById(req.user.id).select('-password -activeSessions -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -46,18 +70,15 @@ router.get('/', protect, async (req, res) => {
 });
 
 // @route   PUT /api/profile/personal
-// @access  Private
 router.put('/personal', protect, async (req, res) => {
     try {
         const { name, phone, location, timezone, bio } = req.body;
         const Model = getModelByRole(req.user.role);
-
         const user = await Model.findByIdAndUpdate(
             req.user.id,
             { name, phone, location, timezone, bio },
             { new: true, runValidators: true }
-        ).select('-password');
-
+        ).select('-password -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -65,51 +86,15 @@ router.put('/personal', protect, async (req, res) => {
 });
 
 // @route   PUT /api/profile/candidate
-// @access  Private
 router.put('/candidate', protect, async (req, res) => {
     if (req.user.role !== 'candidate') return res.status(403).json({ message: 'Not authorized' });
     try {
-        const { skills, softSkills, preferredRoles, workType, expectedSalary, noticePeriod } = req.body;
-        const updateData = {};
-        if (skills !== undefined) updateData.skills = skills;
-        if (softSkills !== undefined) updateData.softSkills = softSkills;
-        if (preferredRoles !== undefined) updateData.preferredRoles = preferredRoles;
-        if (workType !== undefined) updateData.workType = workType;
-        if (expectedSalary !== undefined) updateData.salaryExpectation = expectedSalary; // Field name mapping? User.js had salaryExpectation
-
+        const { skills, softSkills, preferredRoles, workType, expectedSalary } = req.body;
         const user = await Candidate.findByIdAndUpdate(
             req.user.id,
-            { $set: updateData },
-            { new: true, runValidators: true }
-        ).select('-password');
-
-        res.json(user);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-// @route   PUT /api/profile/preferences
-// @access  Private
-router.put('/preferences', protect, async (req, res) => {
-    try {
-        const { emailNotifications, inAppNotifications, theme, soundAlerts, language } = req.body;
-        const Model = getModelByRole(req.user.role);
-
-        const user = await Model.findByIdAndUpdate(
-            req.user.id,
-            {
-                preferences: {
-                    emailNotifications,
-                    inAppNotifications,
-                    theme,
-                    soundAlerts,
-                    language
-                }
-            },
+            { skills, softSkills, preferredRoles, workType, salaryExpectation: expectedSalary },
             { new: true }
-        ).select('-password');
-
+        ).select('-password -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -117,18 +102,47 @@ router.put('/preferences', protect, async (req, res) => {
 });
 
 // @route   PUT /api/profile/avatar
-// @access  Private
-router.put('/avatar', protect, async (req, res) => {
+router.put('/avatar', protect, upload.single('avatar'), async (req, res) => {
     try {
-        const { avatar } = req.body;
         const Model = getModelByRole(req.user.role);
+        const updateData = {};
+
+        if (req.file) {
+            updateData.avatarData = req.file.buffer;
+            updateData.avatarMimeType = req.file.mimetype;
+            // Also update URL for backward compatibility
+            updateData.avatar = `/api/profile/avatar-bin/${req.user.role}/${req.user.id}`;
+        }
 
         const user = await Model.findByIdAndUpdate(
             req.user.id,
-            { avatar },
+            { $set: updateData },
             { new: true }
-        ).select('-password');
+        ).select('-password -resumeData -avatarData');
+        res.json(user);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error', error: error.message });
+    }
+});
 
+// @route   PUT /api/profile/resume
+router.put('/resume', protect, upload.single('file'), async (req, res) => {
+    if (req.user.role !== 'candidate') return res.status(403).json({ message: 'Not authorized' });
+    try {
+        const updateData = { updatedAt: Date.now() };
+        if (req.file) {
+            updateData.resumeData = req.file.buffer;
+            updateData.resumeMimeType = req.file.mimetype;
+            updateData.resumeFileName = req.file.originalname;
+            updateData.resumeUploadDate = Date.now();
+            updateData.resumeUrl = `/api/profile/resume-bin/${req.user.id}`;
+        }
+
+        const user = await Candidate.findByIdAndUpdate(
+            req.user.id,
+            { $set: updateData },
+            { new: true }
+        ).select('-password -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -136,37 +150,47 @@ router.put('/avatar', protect, async (req, res) => {
 });
 
 // @route   PUT /api/profile/password
-// @access  Private
 router.put('/password', protect, async (req, res) => {
     try {
         const { currentPassword, newPassword } = req.body;
-        const bcrypt = require('bcryptjs');
-
         const Model = getModelByRole(req.user.role);
-        const user = await Model.findById(req.user.id); // Need password field
 
+        // 1. Find user (we need the password field for comparison)
+        const user = await Model.findById(req.user.id);
         if (!user) return res.status(404).json({ message: 'User not found' });
 
-        const isMatch = await bcrypt.compare(currentPassword, user.password);
-        if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+        // 2. Verify current password
+        const isMatch = await user.matchPassword(currentPassword);
+        if (!isMatch) {
+            return res.status(400).json({ message: 'Current password is incorrect' });
+        }
 
-        const isSameAsOld = await bcrypt.compare(newPassword, user.password);
-        if (isSameAsOld) return res.status(400).json({ message: 'New password must be different' });
+        // 3. --- PASSWORD SECURITY CHECKS (Same as Registration) ---
+        if (newPassword.length < 8) {
+            return res.status(400).json({ message: 'New password must be at least 8 characters long' });
+        }
+        if (!/[A-Z]/.test(newPassword)) {
+            return res.status(400).json({ message: 'New password must contain at least one uppercase letter' });
+        }
+        if (!/[a-z]/.test(newPassword)) {
+            return res.status(400).json({ message: 'New password must contain at least one lowercase letter' });
+        }
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(newPassword)) {
+            return res.status(400).json({ message: 'New password must contain at least one special character (symbol)' });
+        }
 
-        // Password strength validation omitted for brevity but should be kept
-
-        const salt = await bcrypt.genSalt(10);
-        user.password = await bcrypt.hash(newPassword, salt);
+        // 4. Update and Save (The model's .pre('save') hook will handle hashing)
+        user.password = newPassword;
         await user.save();
 
         res.json({ message: 'Password updated successfully' });
     } catch (error) {
+        console.error('[PWD_UPDATE_ERROR]', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 });
 
 // @route   PUT /api/profile/goals (Candidate only)
-// @access  Private
 router.put('/goals', protect, async (req, res) => {
     if (req.user.role !== 'candidate') return res.status(403).json({ message: 'Not authorized' });
     try {
@@ -174,8 +198,8 @@ router.put('/goals', protect, async (req, res) => {
         const user = await Candidate.findByIdAndUpdate(
             req.user.id,
             { topJobRoles, workType, salaryExpectation, skills },
-            { new: true, runValidators: true }
-        ).select('-password');
+            { new: true }
+        ).select('-password -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -183,7 +207,6 @@ router.put('/goals', protect, async (req, res) => {
 });
 
 // @route   PUT /api/profile/interviewer (Interviewer only)
-// @access  Private
 router.put('/interviewer', protect, async (req, res) => {
     if (req.user.role !== 'interviewer') return res.status(403).json({ message: 'Not authorized' });
     try {
@@ -191,76 +214,8 @@ router.put('/interviewer', protect, async (req, res) => {
         const user = await Interviewer.findByIdAndUpdate(
             req.user.id,
             { expertise },
-            { new: true, runValidators: true }
-        ).select('-password');
-        res.json(user);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error', error: error.message });
-    }
-});
-
-// Session Logout routes - Generic for all
-router.post('/sessions/logout', protect, async (req, res) => {
-    try {
-        const { sessionToken } = req.body;
-        const Model = getModelByRole(req.user.role);
-        const user = await Model.findById(req.user.id);
-
-        user.activeSessions = user.activeSessions.filter(s => s.token !== sessionToken);
-        await user.save();
-        res.json({ message: 'Logged out from device' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-router.post('/sessions/logout-all', protect, async (req, res) => {
-    try {
-        const Model = getModelByRole(req.user.role);
-        const user = await Model.findById(req.user.id);
-        const currentToken = req.headers.authorization.split(' ')[1];
-
-        user.activeSessions = user.activeSessions.filter(s => s.token === currentToken);
-        await user.save();
-        res.json({ message: 'Logged out from all other devices' });
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-router.get('/sessions', protect, async (req, res) => {
-    try {
-        const Model = getModelByRole(req.user.role);
-        const user = await Model.findById(req.user.id).select('activeSessions');
-        res.json(user.activeSessions || []);
-    } catch (error) {
-        res.status(500).json({ message: 'Server error' });
-    }
-});
-
-router.put('/resume', protect, upload.single('file'), async (req, res) => {
-    if (req.user.role !== 'candidate') return res.status(403).json({ message: 'Not authorized' });
-    try {
-        // ... Resume upload logic same as before, simplified for brevity ...
-        let parsedData = req.body.parsedData;
-        if (typeof parsedData === 'string') parsedData = JSON.parse(parsedData);
-
-        const updateData = { updatedAt: Date.now() };
-        if (req.file) {
-            updateData.resumeUrl = `/uploads/resumes/${req.file.filename}`;
-            updateData.resumeFileName = req.file.originalname;
-            updateData.resumeUploadDate = Date.now();
-        }
-        if (parsedData) {
-            updateData.skills = parsedData.technical_skills;
-            // Map other AI parsed fields...
-        }
-
-        const user = await Candidate.findByIdAndUpdate(
-            req.user.id,
-            { $set: updateData },
             { new: true }
-        ).select('-password');
+        ).select('-password -resumeData -avatarData');
         res.json(user);
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });

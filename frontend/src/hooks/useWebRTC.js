@@ -5,251 +5,219 @@ const SOCKET_URL = import.meta.env.VITE_API_URL
     ? import.meta.env.VITE_API_URL.replace('/api', '')
     : 'http://localhost:5000';
 
-const useWebRTC = (roomId, userId) => {
+const useWebRTC = (roomId, userId, isInterviewer = false) => {
     const [localStream, setLocalStream] = useState(null);
     const [remoteStream, setRemoteStream] = useState(null);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [isAudioEnabled, setIsAudioEnabled] = useState(true);
     const [isVideoEnabled, setIsVideoEnabled] = useState(true);
 
+    const pcRef = useRef(null);
+    const socketRef = useRef(null);
     const [socket, setSocket] = useState(null);
-    const socketRef = useRef();
-    const peerConnectionRef = useRef();
+
     const localVideoRef = useRef();
     const remoteVideoRef = useRef();
-    const remoteSocketId = useRef(null);
-    const localStreamRef = useRef(null); // Fix: Use Ref to access stream inside event handlers
+    const localStreamRef = useRef(null);
+    const candidatesQueue = useRef([]);
 
     const servers = {
         iceServers: [
-            {
-                urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'],
-            },
+            { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] },
         ],
+    };
+
+    // --- STEP 1: CREATE THE CONNECTION ---
+    const createPeerConnection = () => {
+        // If we already have a connection, don't make a new one
+        if (pcRef.current) return pcRef.current;
+
+        console.log(`[RTC] 🛠️ Creating PC (${isInterviewer ? 'Initiator' : 'Responder'})`);
+        const pc = new RTCPeerConnection(servers);
+        pcRef.current = pc;
+
+        // When the browser finds a path to connect, tell the other person
+        pc.onicecandidate = ({ candidate }) => {
+            if (candidate && socketRef.current) {
+                socketRef.current.emit('ice-candidate', { target: roomId, candidate });
+            }
+        };
+
+        // Track if we are connected, disconnected, or failed
+        pc.oniceconnectionstatechange = () => {
+            console.log('[RTC] 🌐 ICE State:', pc.iceConnectionState);
+            setConnectionStatus(pc.iceConnectionState);
+        };
+
+        // When we receive video/audio from the other person, show it on screen
+        pc.ontrack = ({ streams }) => {
+            console.log('[RTC] 📥 Remote track received');
+            const remoteStreamData = streams[0];
+            if (remoteStreamData && remoteVideoRef.current) {
+                setRemoteStream(remoteStreamData);
+                remoteVideoRef.current.srcObject = remoteStreamData;
+            }
+        };
+
+        // If we have our own camera/mic ready, add them to the connection
+        if (localStreamRef.current) {
+            console.log('[RTC] 📤 Adding local tracks');
+            localStreamRef.current.getTracks().forEach(track => {
+                pc.addTrack(track, localStreamRef.current);
+            });
+        }
+
+        return pc;
+    };
+
+    // --- STEP 2: SIGNALING (THE PHONE CALL) ---
+
+    // The interviewer starts the call by sending an "Offer"
+    const startCall = async () => {
+        if (!isInterviewer) return;
+        const pc = createPeerConnection();
+        try {
+            console.log('[RTC] 📞 Interviewer starting call...');
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            socketRef.current.emit('offer', { target: roomId, sdp: pc.localDescription });
+        } catch (err) {
+            console.error('[RTC] Offer Error:', err);
+        }
+    };
+
+    // The candidate receives the offer and sends back an "Answer"
+    const handleOffer = async (sdp) => {
+        if (isInterviewer) {
+            console.warn('[RTC] Interviewer received an offer, ignoring secondary offer');
+            return;
+        }
+        const pc = createPeerConnection();
+        try {
+            console.log('[RTC] 📥 Candidate handling offer...');
+            await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+            // If we got connection info before the offer was ready, handle it now
+            while (candidatesQueue.current.length > 0) {
+                const queuedCandidate = candidatesQueue.current.shift();
+                await pc.addIceCandidate(new RTCIceCandidate(queuedCandidate));
+            }
+
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            socketRef.current.emit('answer', { target: roomId, sdp: pc.localDescription });
+        } catch (err) {
+            console.error('[RTC] Answer Error:', err);
+        }
+    };
+
+    // The interviewer receives the answer to finish the handshake
+    const handleAnswer = async (sdp) => {
+        if (!isInterviewer) return;
+        console.log('[RTC] 📥 Interviewer handling answer');
+        if (pcRef.current) {
+            try {
+                await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+                // Handle any connection candidates that arrived early
+                while (candidatesQueue.current.length > 0) {
+                    const queuedCandidate = candidatesQueue.current.shift();
+                    await pcRef.current.addIceCandidate(new RTCIceCandidate(queuedCandidate));
+                }
+            } catch (err) {
+                console.error('[RTC] Answer Handling Error:', err);
+            }
+        }
+    };
+
+    // Handle connection routing info (ICE candidates)
+    const handleCandidate = async (candidate) => {
+        const pc = pcRef.current;
+        if (pc && pc.remoteDescription) {
+            try {
+                await pc.addIceCandidate(new RTCIceCandidate(candidate));
+            } catch (e) {
+                console.warn('[RTC] ICE candidate failed', e);
+            }
+        } else {
+            console.log('[RTC] ⏳ Queuing connection info until ready...');
+            candidatesQueue.current.push(candidate);
+        }
     };
 
     useEffect(() => {
         if (!roomId) return;
 
-        console.log('[CAMERA] Initializing WebRTC for room:', roomId);
-        console.log('[CAMERA] Connecting to socket server at:', SOCKET_URL);
+        const s = io(SOCKET_URL);
+        socketRef.current = s;
+        setSocket(s);
 
-        const newSocket = io(SOCKET_URL);
-        socketRef.current = newSocket;
-        setSocket(newSocket);
-
-        newSocket.on('connect', () => {
-            console.log('[Socket] Connected to server:', newSocket.id);
+        s.on('connect', () => {
+            console.log('[RTC] 🔌 Socket Connected:', s.id);
+            s.emit('join-room', roomId, userId);
         });
 
-        newSocket.on('connect_error', (err) => {
-            console.error('[Socket] Connection error:', err);
-            setConnectionStatus('error');
-        });
-
-        // Get User Media with enhanced error handling
-        console.log('[CAMERA] Requesting camera and microphone access...');
-        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-            .then((stream) => {
-                console.log('[CAMERA] ✅ Camera access granted!');
-                console.log('[CAMERA] Video tracks:', stream.getVideoTracks());
-                console.log('[CAMERA] Audio tracks:', stream.getAudioTracks());
-
-                setLocalStream(stream);
-                localStreamRef.current = stream; // Update existing Ref
-
-                if (localVideoRef.current) {
-                    localVideoRef.current.srcObject = stream;
-                    localVideoRef.current.muted = true; // Always mute local video to prevent echo
-                    console.log('[CAMERA] ✅ Local video element updated');
-                } else {
-                    console.warn('[CAMERA] ⚠️ Local video ref not ready yet, will sync via useEffect');
-                }
-
-                socketRef.current.emit('join-room', roomId, userId);
-                setConnectionStatus('connected');
-            })
-            .catch((err) => {
-                console.error('[CAMERA] ❌ Error accessing media devices:', err);
-                console.error('[CAMERA] Error name:', err.name);
-                console.error('[CAMERA] Error message:', err.message);
-
-                // Provide user-friendly error messages
-                let errorMessage = 'Unable to access camera/microphone.\n\n';
-                let shouldAskToContinue = false;
-
-                if (err.name === 'NotReadableError') {
-                    errorMessage += 'Camera/microphone is already in use.\n\n';
-                    errorMessage += 'Testing tip: Use different browsers (Chrome + Firefox) or devices.\n\n';
-                    errorMessage += 'Continue without video?';
-                    shouldAskToContinue = true;
-                } else if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                    errorMessage += 'Permission denied. Please allow camera access.\n\n';
-                    errorMessage += 'Continue without video?';
-                    shouldAskToContinue = true;
-                } else if (err.name === 'NotFoundError') {
-                    errorMessage += 'No camera or microphone found.\n\n';
-                    errorMessage += 'Continue without video?';
-                    shouldAskToContinue = true;
-                } else {
-                    errorMessage += (err.message || 'Unknown error') + '\n\n';
-                    errorMessage += 'Continue without video?';
-                    shouldAskToContinue = true;
-                }
-
-                // Ask user if they want to continue without media
-                if (shouldAskToContinue && confirm(errorMessage)) {
-                    // Continue interview without video - still join room for questions/chat
-                    socketRef.current.emit('join-room', roomId, userId);
-                    setConnectionStatus('connected-no-media');
-                    console.log('[CAMERA] Interview continuing without camera/microphone');
-                } else {
-                    setConnectionStatus('error');
-                }
-            });
-
-        // Socket Events
-        socketRef.current.on('user-connected', ({ userId: remoteUser, socketId }) => {
-            console.log('[WEBRTC] User connected:', remoteUser, socketId);
-            const currentStream = localStreamRef.current;
-            console.log('[WEBRTC] Local stream available:', !!currentStream);
-            console.log('[WEBRTC] Local video ref ready:', !!localVideoRef.current);
-            remoteSocketId.current = socketId;
-
-
-            // Check if we have a local stream to share
-            if (currentStream) {
-                console.log('[WEBRTC] Creating offer to:', socketId);
-                createOffer(socketId);
-            } else {
-                console.warn('[WEBRTC] ⚠️ No local stream available yet, cannot create offer');
+        s.on('user-connected', () => {
+            console.log('[RTC] 👤 Peer joined room');
+            if (isInterviewer && localStreamRef.current) {
+                startCall();
             }
         });
 
-        socketRef.current.on('offer', handleReceiveOffer);
-        socketRef.current.on('answer', handleReceiveAnswer);
-        socketRef.current.on('ice-candidate', handleReceiveIceCandidate);
+        s.on('offer', (data) => handleOffer(data.sdp));
+        s.on('answer', (data) => handleAnswer(data.sdp));
+        s.on('ice-candidate', (data) => handleCandidate(data.candidate));
+
+        // Media Acquisition
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                console.log('[RTC] 🎥 Local media acquired');
+                setLocalStream(stream);
+                localStreamRef.current = stream;
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+
+                // If I am interviewer and I'm joining a room where candidate might be already waiting
+                if (isInterviewer) {
+                    // We wait a bit or check if we should start
+                    // Simplest: just try to start, if nobody is there, the offer goes nowhere.
+                    // When the candidate joins later, 'user-connected' will trigger another startCall.
+                    startCall();
+                }
+            })
+            .catch(err => {
+                console.error('[RTC] Media Error:', err);
+                setConnectionStatus('no-media');
+            });
 
         return () => {
-            if (localStreamRef.current) {
-                localStreamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (socketRef.current) {
-                socketRef.current.disconnect();
-            }
-            if (peerConnectionRef.current) {
-                peerConnectionRef.current.close();
-            }
+            console.log('[RTC] 🧹 Hook Cleanup');
+            s.disconnect();
+            if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+            if (pcRef.current) pcRef.current.close();
+            pcRef.current = null;
         };
-    }, [roomId, userId]);
-
-    // Sync localStream to video element when stream or ref changes
-    useEffect(() => {
-        if (localStream && localVideoRef.current) {
-            console.log('[CAMERA] Syncing local stream to video element');
-            localVideoRef.current.srcObject = localStream;
-            localVideoRef.current.muted = true;
-            console.log('[CAMERA] ✅ Local stream synced successfully');
-        }
-    }, [localStream]);
-
-    // Sync remoteStream to video element when stream or ref changes
-    useEffect(() => {
-        if (remoteStream && remoteVideoRef.current) {
-            console.log('[CAMERA] Syncing remote stream to video element');
-            remoteVideoRef.current.srcObject = remoteStream;
-            console.log('[CAMERA] ✅ Remote stream synced successfully');
-        }
-    }, [remoteStream]);
-
-    const createPeerConnection = () => {
-        const peerConnection = new RTCPeerConnection(servers);
-
-        peerConnection.onicecandidate = (event) => {
-            if (event.candidate && remoteSocketId.current) {
-                socketRef.current.emit('ice-candidate', {
-                    target: remoteSocketId.current,
-                    candidate: event.candidate,
-                });
-            }
-        };
-
-        peerConnection.ontrack = (event) => {
-            setRemoteStream(event.streams[0]);
-            if (remoteVideoRef.current) {
-                remoteVideoRef.current.srcObject = event.streams[0];
-            }
-        };
-
-        const currentStream = localStreamRef.current;
-        if (currentStream) {
-            currentStream.getTracks().forEach((track) => {
-                peerConnection.addTrack(track, currentStream);
-            });
-        }
-
-        peerConnectionRef.current = peerConnection;
-        return peerConnection;
-    };
-
-    const createOffer = async (targetSocketId) => {
-        const peerConnection = createPeerConnection();
-        const offer = await peerConnection.createOffer();
-        await peerConnection.setLocalDescription(offer);
-
-        socketRef.current.emit('offer', {
-            target: targetSocketId,
-            sdp: offer,
-            senderSocketId: socketRef.current.id // Send back own ID so receiver knows who sent it
-        });
-    };
-
-    const handleReceiveOffer = async ({ sdp, senderSocketId }) => {
-        remoteSocketId.current = senderSocketId; // Capture sender ID
-
-        const peerConnection = createPeerConnection();
-        await peerConnection.setRemoteDescription(new RTCSessionDescription(sdp));
-
-        const answer = await peerConnection.createAnswer();
-        await peerConnection.setLocalDescription(answer);
-
-        socketRef.current.emit('answer', {
-            target: senderSocketId,
-            sdp: answer,
-        });
-    };
-
-    const handleReceiveAnswer = async ({ sdp }) => {
-        if (peerConnectionRef.current) {
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-        }
-    };
-
-    const handleReceiveIceCandidate = async (candidate) => {
-        if (peerConnectionRef.current) {
-            try {
-                await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-            } catch (e) {
-                console.error('Error adding received ice candidate', e);
-            }
-        }
-    };
+    }, [roomId, userId, isInterviewer]);
 
     const toggleAudio = () => {
-        if (localStream) {
-            localStream.getAudioTracks().forEach(track => {
-                track.enabled = !track.enabled;
+        const stream = localStreamRef.current;
+        if (stream) {
+            const enabled = !isAudioEnabled;
+            stream.getAudioTracks().forEach(t => {
+                t.enabled = enabled;
+                console.log(`[RTC] Audio Track ${t.id} enabled: ${enabled}`);
             });
-            setIsAudioEnabled(!isAudioEnabled);
+            setIsAudioEnabled(enabled);
         }
     };
 
     const toggleVideo = () => {
-        if (localStream) {
-            localStream.getVideoTracks().forEach(track => {
-                track.enabled = !track.enabled;
+        const stream = localStreamRef.current;
+        if (stream) {
+            const enabled = !isVideoEnabled;
+            stream.getVideoTracks().forEach(t => {
+                t.enabled = enabled;
+                console.log(`[RTC] Video Track ${t.id} enabled: ${enabled}`);
             });
-            setIsVideoEnabled(!isVideoEnabled);
+            setIsVideoEnabled(enabled);
         }
     };
 
@@ -261,7 +229,6 @@ const useWebRTC = (roomId, userId) => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef,
         socket
     };
 };

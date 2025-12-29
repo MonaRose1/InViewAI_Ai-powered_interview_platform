@@ -54,8 +54,11 @@ const CandidateResume = () => {
 
     const handleDownloadResume = () => {
         if (user?.resumeUrl) {
-            const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-            window.open(`${baseUrl}${user.resumeUrl}`, '_blank');
+            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+            const fullUrl = user.resumeUrl.startsWith('http')
+                ? user.resumeUrl
+                : `${baseUrl}${user.resumeUrl}`;
+            window.open(fullUrl, '_blank');
         }
     };
 

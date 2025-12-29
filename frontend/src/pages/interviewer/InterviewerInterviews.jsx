@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { Calendar, Clock, Video, User, Search, Filter, CheckCircle, XCircle, ChevronRight, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import InterviewerService from '../../services/interviewerService';
+import InterviewDetailsModal from './components/InterviewDetailsModal';
 
 const InterviewerInterviews = () => {
     const [interviews, setInterviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState('all'); // all, scheduled, completed, cancelled
     const [searchQuery, setSearchQuery] = useState('');
+    const [selectedInterviewId, setSelectedInterviewId] = useState(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
 
     useEffect(() => {
         const fetchInterviews = async () => {
@@ -69,8 +72,8 @@ const InterviewerInterviews = () => {
                             key={tab}
                             onClick={() => setFilter(tab)}
                             className={`px-6 py-2 rounded-xl text-sm font-bold capitalize transition-all ${filter === tab
-                                    ? 'bg-slate-900 text-white shadow-lg shadow-slate-200'
-                                    : 'text-slate-500 hover:bg-slate-50'
+                                ? 'bg-slate-900 text-white shadow-lg shadow-slate-200'
+                                : 'text-slate-500 hover:bg-slate-50'
                                 }`}
                         >
                             {tab}
@@ -141,7 +144,13 @@ const InterviewerInterviews = () => {
                                                 <Video size={20} />
                                             </Link>
                                         )}
-                                        <button className="p-3 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-2xl transition-all">
+                                        <button
+                                            onClick={() => {
+                                                setSelectedInterviewId(interview._id);
+                                                setIsModalOpen(true);
+                                            }}
+                                            className="p-3 bg-slate-50 text-slate-400 hover:text-slate-600 rounded-2xl transition-all"
+                                        >
                                             <ChevronRight size={20} />
                                         </button>
                                     </div>
@@ -157,6 +166,12 @@ const InterviewerInterviews = () => {
                     <p className="text-slate-400 font-medium">Try adjusting your filters or search terms.</p>
                 </div>
             )}
+
+            <InterviewDetailsModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                interviewId={selectedInterviewId}
+            />
         </div>
     );
 };

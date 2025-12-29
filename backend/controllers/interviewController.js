@@ -1,6 +1,7 @@
 const Interview = require('../models/Interview');
 const Application = require('../models/Application');
 const Notification = require('../models/Notification');
+const { generateInterviewReport } = require('../services/reportService');
 
 // @desc    Get all interviews assigned to the current interviewer
 // @route   GET /api/interviews
@@ -53,6 +54,7 @@ const getInterviewById = async (req, res) => {
         let interview = await Interview.findById(req.params.id)
             .populate('candidate', 'name email avatar')
             .populate('interviewer', 'name email')
+            .populate('job', 'title department')
             .populate({
                 path: 'application',
                 populate: {
@@ -68,6 +70,7 @@ const getInterviewById = async (req, res) => {
             interview = await Interview.findOne({ application: req.params.id })
                 .populate('candidate', 'name email avatar')
                 .populate('interviewer', 'name email')
+                .populate('job', 'title department')
                 .populate({
                     path: 'application',
                     populate: {
@@ -240,7 +243,62 @@ const updateInterviewQuestions = async (req, res) => {
 
         res.json({ message: 'Questions updated successfully', questions: interview.questions });
     } catch (error) {
-        res.status(500).json({ message: 'Server Error', error: error.message });
+        console.error('Update questions error:', error);
+        res.status(500).json({ message: 'Failed to update questions' });
+    }
+};
+
+// @desc    Download Interview Report PDF
+// @route   GET /api/interviews/:id/report
+// @access  Private/Interviewer/Admin
+const getInterviewReport = async (req, res) => {
+    try {
+        const interview = await Interview.findById(req.params.id)
+            .populate('candidate', 'name email')
+            .populate('job', 'title')
+            .populate('aiResult')
+            .populate('manualScore');
+
+        if (!interview) {
+            return res.status(404).json({ message: 'Interview not found' });
+        }
+
+        // --- CALCULATE INSIGHTS STEP-BY-STEP ---
+        let confidenceLevel = 'Developing';
+        const aiConf = interview.aiResult?.overallConfidence || 0;
+        if (aiConf > 70) {
+            confidenceLevel = 'High';
+        } else if (aiConf > 40) {
+            confidenceLevel = 'Moderate';
+        }
+
+        let nervousnessLevel = 'Low';
+        const aiStress = interview.aiResult?.overallStress || 0;
+        if (aiStress > 60) {
+            nervousnessLevel = 'High';
+        } else if (aiStress > 30) {
+            nervousnessLevel = 'Moderate';
+        }
+
+        // Prepare data for report generator
+        const reportData = {
+            candidateName: interview.candidate?.name || 'Unknown',
+            jobTitle: interview.job?.title || 'Unknown Position',
+            aiScore: aiConf,
+            codeScore: interview.manualScore?.technicalScore || 0,
+            totalScore: interview.score || 0,
+            insights: {
+                confidence: confidenceLevel,
+                nervousness: nervousnessLevel,
+                eyeContact: 'Checked via behavioral history'
+            },
+            codeSubmission: interview.notes || 'No specific technical notes recorded.'
+        };
+
+        generateInterviewReport(reportData, res);
+    } catch (error) {
+        console.error('[REPORT_GEN_ERROR]', error);
+        res.status(500).json({ message: 'Failed to generate report', error: error.message });
     }
 };
 
@@ -252,5 +310,6 @@ module.exports = {
     updateInterviewStatus,
     endInterview,
     updateNotes,
-    updateInterviewQuestions
+    updateInterviewQuestions,
+    getInterviewReport
 };

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Mic, Video, PhoneOff, AlertCircle, MessageSquare, Play, MicOff, VideoOff, Clock, User, Briefcase, Calendar, Loader2, ChevronRight, TrendingUp, ShieldAlert, Send, X } from 'lucide-react';
+import { Mic, Video, PhoneOff, AlertCircle, MessageSquare, Play, MicOff, VideoOff, Clock, User, Briefcase, Calendar, Loader2, ChevronRight, TrendingUp, ShieldAlert, Send } from 'lucide-react';
 import api from '../../services/api';
 import useWebRTC from '../../hooks/useWebRTC';
 import { useAuth } from '../../context/AuthContext';
@@ -20,13 +20,15 @@ const LiveInterviewPage = () => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef,
-        socket
-    } = useWebRTC(id, userId);
+        socket,
+        debugData
+    } = useWebRTC(id, userId, true);
+
 
     const [aiData, setAiData] = useState({
         confidence: 85,
         stress: 20,
+        stressText: 'Low',
         emotion: 'Neutral',
         flags: []
     });
@@ -70,22 +72,23 @@ const LiveInterviewPage = () => {
     }, [messages]);
 
     // Fetch interview details
-    useEffect(() => {
-        const fetchInterview = async () => {
-            try {
-                setLoadingData(true);
-                const { data } = await api.get(`/interviews/${id}`);
-                setInterviewDetails(data);
-                if (data.notes) setNotes(data.notes);
-                if (data.questions && data.questions.length > 0) {
-                    setSessionQuestions(data.questions);
-                }
-            } catch (err) {
-                console.error("Failed to fetch interview data", err);
-            } finally {
-                setLoadingData(false);
+    const fetchInterview = async () => {
+        try {
+            setLoadingData(true);
+            const { data } = await api.get(`/interviews/${id}`);
+            setInterviewDetails(data);
+            if (data.notes) setNotes(data.notes);
+            if (data.questions && data.questions.length > 0) {
+                setSessionQuestions(data.questions);
             }
-        };
+        } catch (err) {
+            console.error("Failed to fetch interview data", err);
+        } finally {
+            setLoadingData(false);
+        }
+    };
+
+    useEffect(() => {
         fetchInterview();
     }, [id]);
 
@@ -146,10 +149,13 @@ const LiveInterviewPage = () => {
         if (!socket) return;
 
         const handleAnswers = (updatedQuestions) => {
-            console.log("Answers received via socket:", updatedQuestions);
+            console.log("[SOCKET] answers-received event caught", updatedQuestions);
             // Only update if we actually got questions to avoid clearing the list
             if (updatedQuestions && Array.isArray(updatedQuestions) && updatedQuestions.length > 0) {
                 setSessionQuestions(updatedQuestions);
+                console.log("[UI] Session questions updated via socket");
+            } else {
+                console.warn("[SOCKET] answers-received payload was empty or invalid");
             }
         };
 
@@ -157,10 +163,15 @@ const LiveInterviewPage = () => {
             setAiData(prev => {
                 const newFlags = data.face_detected ? prev.flags : [...prev.flags, { time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), text: 'Face focus lost' }];
                 const trimmedFlags = newFlags.slice(-10);
+
+                const stressVal = data.behavior_analysis?.stress_level;
+                const stressScore = stressVal === "High" ? 85 : stressVal === "Medium" ? 50 : 20;
+
                 return {
-                    confidence: data.behavior_analysis?.engagement_score * 100 || prev.confidence,
-                    stress: data.behavior_analysis?.stress_level === "High" ? 85 : data.behavior_analysis?.stress_level === "Medium" ? 50 : 20,
-                    emotion: data.behavior_analysis?.dominant_emotion || "Neutral",
+                    confidence: data.behavior_analysis?.professional_presence_score || data.confidence * 100 || prev.confidence,
+                    stress: stressScore,
+                    stressText: stressVal || "Low",
+                    emotion: data.behavior_analysis?.dominant_emotion || data.emotion || "Neutral",
                     flags: trimmedFlags
                 };
             });
@@ -272,11 +283,10 @@ const LiveInterviewPage = () => {
                         </div>
                         <div>
                             <h2 className="font-black text-sm tracking-tight text-white/90">
-                                {interviewDetails?.job?.title || 'Interview Session'}
+                                Interview Session
                             </h2>
-                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                {interviewDetails?.job?.company || 'Organization'}
-                                {interviewDetails?.job?.department && ` • ${interviewDetails.job.department}`}
+                            <p className="text-[10px] font-bold text-secondary uppercase tracking-widest">
+                                {interviewDetails?.job?.title || interviewDetails?.application?.job?.title || 'null'}
                             </p>
                         </div>
                     </div>
@@ -373,13 +383,6 @@ const LiveInterviewPage = () => {
                             </div>
                         </div>
 
-                        {/* Toggle Panel Button */}
-                        <button
-                            onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
-                            className="absolute -right-4 top-1/2 -translate-y-1/2 w-8 h-8 bg-neutral-800 border-y border-r border-white/10 rounded-r-full flex items-center justify-center hover:bg-neutral-700 transition-colors z-50 pointer-events-auto shadow-xl"
-                        >
-                            <ChevronRight size={14} className={`transition-transform duration-500 ${leftPanelCollapsed ? '' : 'rotate-180'}`} />
-                        </button>
                     </div>
 
                     {/* AI & Controls (Bottom) */}
@@ -418,7 +421,18 @@ const LiveInterviewPage = () => {
                                         <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></div>
                                         Live AI Analytics
                                     </h3>
-                                    <span className="text-[10px] font-bold text-secondary bg-secondary/10 px-2 py-0.5 rounded-full">Active</span>
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-secondary bg-secondary/10 px-2 py-0.5 rounded-full">
+                                            {interviewDetails ? 'API: Online' : 'API: Syncing...'}
+                                        </span>
+                                        <button
+                                            onClick={fetchInterview}
+                                            className="text-[10px] font-black text-white/40 hover:text-secondary uppercase transition-colors"
+                                            title="Force re-sync with database"
+                                        >
+                                            Sync Session
+                                        </button>
+                                    </div>
                                 </div>
 
                                 {/* Sentiment Gauges */}
@@ -436,13 +450,15 @@ const LiveInterviewPage = () => {
                                     </div>
 
                                     <div className="bg-white/5 rounded-2xl p-4 border border-white/5 hover:bg-white/[0.07] transition-colors relative overflow-hidden group">
-                                        <div className={`absolute top-0 right-0 w-20 h-20 ${aiData.stress > 50 ? 'bg-red-500/5' : 'bg-green-500/5'} rounded-full -mr-10 -mt-10 blur-xl transition-all`}></div>
+                                        <div className={`absolute top-0 right-0 w-20 h-20 ${aiData.stressText === 'High' ? 'bg-red-500/10' : aiData.stressText === 'Medium' ? 'bg-yellow-500/10' : 'bg-green-500/10'} rounded-full -mr-10 -mt-10 blur-xl transition-all`}></div>
                                         <p className="text-[10px] font-black text-gray-500 uppercase mb-3">Stress Level</p>
                                         <div className="flex items-end gap-1">
-                                            <span className={`text-2xl font-black ${aiData.stress > 50 ? 'text-red-400' : 'text-green-400'}`}>{aiData.stress > 50 ? 'High' : 'Low'}</span>
+                                            <span className={`text-2xl font-black ${aiData.stressText === 'High' ? 'text-red-400' : aiData.stressText === 'Medium' ? 'text-yellow-400' : 'text-green-400'}`}>
+                                                {aiData.stressText || 'Low'}
+                                            </span>
                                         </div>
                                         <div className="mt-3 w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
-                                            <div className={`h-full transition-all duration-1000 ${aiData.stress > 50 ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-green-500'}`} style={{ width: `${aiData.stress}%` }}></div>
+                                            <div className={`h-full transition-all duration-1000 ${aiData.stressText === 'High' ? 'bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]' : aiData.stressText === 'Medium' ? 'bg-yellow-500 shadow-[0_0_10px_rgba(234,179,8,0.5)]' : 'bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]'}`} style={{ width: `${aiData.stress}%` }}></div>
                                         </div>
                                     </div>
                                 </div>
@@ -458,40 +474,40 @@ const LiveInterviewPage = () => {
                                             aiData.emotion === 'Serious' || aiData.emotion === 'Neutral' ? '😐' : '🧐'}
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Interviewer Notes Area */}
-                            <div className="space-y-4">
-                                <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Observation Notes</h3>
-                                <div className="relative group">
-                                    <textarea
-                                        className="w-full h-40 bg-black/40 border border-white/5 rounded-2xl p-4 text-xs font-medium text-white/80 focus:border-secondary/50 focus:ring-4 focus:ring-secondary/10 outline-none transition-all resize-none leading-relaxed placeholder:text-gray-700 custom-scrollbar"
-                                        placeholder="Record key observations, technical strengths, or concerns during the session..."
-                                        value={notes}
-                                        onChange={(e) => setNotes(e.target.value)}
-                                    />
-                                    <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="px-2 py-1 bg-white/5 border border-white/10 rounded text-[8px] font-black uppercase text-gray-500">Auto-saving</div>
+                                {/* Interviewer Notes Area */}
+                                <div className="space-y-4">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-500">Observation Notes</h3>
+                                    <div className="relative group">
+                                        <textarea
+                                            className="w-full h-40 bg-black/40 border border-white/5 rounded-2xl p-4 text-xs font-medium text-white/80 focus:border-secondary/50 focus:ring-4 focus:ring-secondary/10 outline-none transition-all resize-none leading-relaxed placeholder:text-gray-700 custom-scrollbar"
+                                            placeholder="Record key observations, technical strengths, or concerns during the session..."
+                                            value={notes}
+                                            onChange={(e) => setNotes(e.target.value)}
+                                        />
+                                        <div className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="px-2 py-1 bg-white/5 border border-white/10 rounded text-[8px] font-black uppercase text-gray-500">Auto-saving</div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Alert History (Flags) */}
-                            {aiData.flags.length > 0 && (
-                                <div className="space-y-3">
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400/70 flex items-center gap-2">
-                                        <ShieldAlert size={12} /> SESSION ANOMALIES
-                                    </h3>
-                                    <div className="space-y-2">
-                                        {aiData.flags.slice(-3).map((flag, i) => (
-                                            <div key={`flag-${i}`} className="bg-red-500/5 border border-red-500/10 rounded-xl px-4 py-2.5 flex items-center justify-between group hover:bg-red-500/10 transition-colors">
-                                                <span className="text-[11px] font-bold text-red-200/80">{flag.text}</span>
-                                                <span className="text-[9px] font-black text-red-500 uppercase">{flag.time}</span>
-                                            </div>
-                                        ))}
+                                {/* Alert History (Flags) */}
+                                {aiData.flags.length > 0 && (
+                                    <div className="space-y-3">
+                                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400/70 flex items-center gap-2">
+                                            <ShieldAlert size={12} /> SESSION ANOMALIES
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {aiData.flags.slice(-3).map((flag, i) => (
+                                                <div key={`flag-${i}`} className="bg-red-500/5 border border-red-500/10 rounded-xl px-4 py-2.5 flex items-center justify-between group hover:bg-red-500/10 transition-colors">
+                                                    <span className="text-[11px] font-bold text-red-200/80">{flag.text}</span>
+                                                    <span className="text-[9px] font-black text-red-500 uppercase">{flag.time}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -530,7 +546,7 @@ const LiveInterviewPage = () => {
                     {/* Content Switcher */}
                     <div className="flex-1 overflow-hidden relative">
                         {/* Question Session View */}
-                        <div className={`absolute inset-0 transition-all duration-500 transform ${workspaceTab === 'questions' ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0 pointer-events-none'}`}>
+                        <div className={`absolute inset-0 ${workspaceTab === 'questions' ? 'block' : 'hidden'}`}>
                             {loadingData ? (
                                 <div className="h-full flex flex-col items-center justify-center p-12 text-center">
                                     <Loader2 className="animate-spin text-secondary mb-4" size={32} />
@@ -681,7 +697,7 @@ const LiveInterviewPage = () => {
 
 
                         {/* Chat Box View */}
-                        <div className={`absolute inset-0 transition-all duration-500 transform ${workspaceTab === 'chat' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
+                        <div className={`absolute inset-0 ${workspaceTab === 'chat' ? 'block' : 'hidden'}`}>
                             <div className="h-full flex flex-col bg-white">
                                 {/* Chat View */}
                                 <div className="flex-1 overflow-y-auto p-10 space-y-4 custom-scrollbar">

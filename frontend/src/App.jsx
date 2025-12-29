@@ -29,11 +29,11 @@ import TestResultPage from './pages/interviewer/TestResultPage';
 import CandidateLivePage from './pages/candidate/CandidateLivePage';
 import InterviewerHistory from './pages/interviewer/InterviewerHistory';
 import InterviewerNotes from './pages/interviewer/InterviewerNotes';
-import InterviewerRatingPage from './pages/interviewer/InterviewerRatingPage';
 import CandidateResume from './pages/candidate/CandidateResume';
 import CandidateInterviewPrep from './pages/candidate/CandidateInterviewPrep';
 import CandidateFeedback from './pages/candidate/CandidateFeedback';
 import CandidateStatus from './pages/candidate/CandidateStatus';
+import HiredCandidates from './pages/interviewer/HiredCandidates';
 import NotificationPage from './pages/NotificationPage';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
@@ -128,10 +128,10 @@ const App = () => {
               <Route path="dashboard" element={<InterviewerDashboard />} />
               <Route path="applicants" element={<InterviewerApplicants />} />
               <Route path="interviews" element={<InterviewerInterviews />} />
-              <Route path="interviews/:id/rating" element={<InterviewerRatingPage />} />
               <Route path="interviews/:id/notes" element={<InterviewerNotes />} />
               <Route path="question-bank" element={<InterviewerQuestionPage />} />
               <Route path="rankings" element={<InterviewerRankings />} />
+              <Route path="hired" element={<HiredCandidates />} />
               <Route path="history" element={<InterviewerHistory />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>

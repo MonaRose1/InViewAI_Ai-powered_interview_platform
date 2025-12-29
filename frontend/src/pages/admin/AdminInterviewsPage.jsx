@@ -67,12 +67,13 @@ const AdminInterviewsPage = () => {
         }
     };
 
-    const filteredInterviews = searchTerm
-        ? interviews.filter(i =>
+    const filteredInterviews = interviews.filter(i =>
+        (i.candidate?.name && i.candidate?.name !== 'Unknown') &&
+        (!searchTerm ||
             i.candidate?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             i.job?.title?.toLowerCase().includes(searchTerm.toLowerCase())
         )
-        : interviews;
+    );
 
     return (
         <div className="max-w-7xl mx-auto">

@@ -9,7 +9,7 @@ const applicationSchema = new mongoose.Schema({
     referralCode: { type: String },
     status: {
         type: String,
-        enum: ['applied', 'pending', 'shortlisted', 'rejected', 'interview_scheduled', 'interviewed'],
+        enum: ['applied', 'pending', 'shortlisted', 'rejected', 'interview_scheduled', 'interviewed', 'hired'],
         default: 'pending'
     },
     rankingScore: { type: Number, default: 0, index: true },

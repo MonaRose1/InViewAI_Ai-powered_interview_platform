@@ -14,6 +14,20 @@ const PersonalInfoTab = ({ user }) => {
         bio: user?.bio || ''
     });
 
+    // Sync with background user updates
+    React.useEffect(() => {
+        if (user) {
+            setFormData({
+                fullName: user.name || '',
+                email: user.email || '',
+                phone: user.phone || '',
+                location: user.location || '',
+                timezone: user.timezone || 'UTC-05:00',
+                bio: user.bio || ''
+            });
+        }
+    }, [user]);
+
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
     const [error, setError] = useState('');

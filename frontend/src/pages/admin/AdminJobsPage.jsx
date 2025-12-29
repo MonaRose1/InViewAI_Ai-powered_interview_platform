@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, MoreVertical, Briefcase, MapPin, Loader2, Trophy } from 'lucide-react';
+import { Plus, Search, MoreVertical, Briefcase, MapPin, Loader2, Trophy, Trash2, Edit2, PauseCircle, PlayCircle } from 'lucide-react';
 import JobService from '../../services/jobService';
 import RankingDashboard from '../../components/admin/RankingDashboard';
 
@@ -9,9 +9,19 @@ const AdminJobsPage = () => {
     const [showModal, setShowModal] = useState(false);
     const [showRankingModal, setShowRankingModal] = useState(false);
     const [selectedJobId, setSelectedJobId] = useState(null);
+    const [isEditing, setIsEditing] = useState(false);
+    const [editJobId, setEditJobId] = useState(null);
+    const JOB_ROLES = {
+        "Software Engineer": "clean code, system design, time complexity, scalability, corner cases",
+        "Frontend Developer": "user experience, accessibility, responsive design, state management, component architecture",
+        "Backend Developer": "API design, database optimization, system architecture, security, concurrency",
+        "Data Scientist": "statistical validity, data cleaning, feature engineering, model selection, interpretability",
+        "Full Stack Developer": "end-to-end understanding, API integration, database design, frontend UX",
+        "QA Engineer": "test coverage, edge cases, automation frameworks, bug reporting, regression testing"
+    };
+
     const [formData, setFormData] = useState({
         title: '',
-        department: '',
         description: '',
         requirements: ''
     });
@@ -35,23 +45,84 @@ const AdminJobsPage = () => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
+    const handleRoleChange = (e) => {
+        const role = e.target.value;
+        setFormData({
+            ...formData,
+            title: role,
+            requirements: JOB_ROLES[role] || ''
+        });
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
             const requirementsArray = formData.requirements.split(',').map(req => req.trim());
-            await JobService.createJob({ ...formData, requirements: requirementsArray });
+            const payload = { ...formData, department: 'Engineering', requirements: requirementsArray }; // Default department
+
+            if (isEditing) {
+                await JobService.updateJob(editJobId, payload);
+                alert("Job updated successfully");
+            } else {
+                await JobService.createJob(payload);
+                alert("Job created successfully");
+            }
+
             setShowModal(false);
-            setFormData({ title: '', department: '', description: '', requirements: '' });
+            setFormData({ title: '', description: '', requirements: '' });
+            setIsEditing(false);
+            setEditJobId(null);
             fetchJobs(); // Refresh list
         } catch (error) {
-            console.error("Failed to create job", error);
-            alert("Failed to create job");
+            console.error("Failed to save job", error);
+            alert("Failed to save job");
+        }
+    };
+
+    const openCreateModal = () => {
+        setIsEditing(false);
+        setEditJobId(null);
+        setFormData({ title: '', description: '', requirements: '' });
+        setShowModal(true);
+    };
+
+    const openEditModal = (job) => {
+        setIsEditing(true);
+        setEditJobId(job._id);
+        setFormData({
+            title: job.title,
+            description: job.description,
+            requirements: Array.isArray(job.requirements) ? job.requirements.join(', ') : job.requirements
+        });
+        setShowModal(true);
+    };
+
+    const handleToggleStatus = async (job) => {
+        try {
+            const newStatus = job.status === 'open' ? 'closed' : 'open';
+            await JobService.updateJob(job._id, { status: newStatus });
+            setJobs(jobs.map(j => j._id === job._id ? { ...j, status: newStatus } : j));
+        } catch (error) {
+            console.error("Failed to update status", error);
+            alert("Failed to update status");
         }
     };
 
     const openRankings = (jobId) => {
         setSelectedJobId(jobId);
         setShowRankingModal(true);
+    };
+
+    const handleDeleteJob = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this job? This action cannot be undone.")) return;
+        try {
+            await JobService.deleteJob(id);
+            setJobs(jobs.filter(job => job._id !== id));
+            alert("Job deleted successfully");
+        } catch (error) {
+            console.error("Failed to delete job", error);
+            alert("Failed to delete job");
+        }
     };
 
     return (
@@ -62,7 +133,7 @@ const AdminJobsPage = () => {
                     <p className="text-textMuted mt-1">Create and manage job postings.</p>
                 </div>
                 <button
-                    onClick={() => setShowModal(true)}
+                    onClick={openCreateModal}
                     className="flex items-center gap-2 px-5 py-2.5 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition shadow-lg shadow-secondary/20 font-medium"
                 >
                     <Plus size={20} />
@@ -85,14 +156,13 @@ const AdminJobsPage = () => {
                                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary/20 focus:border-secondary"
                             />
                         </div>
-                        {/* Filter dropdowns could go here */}
                     </div>
 
                     <table className="w-full text-left">
                         <thead className="bg-gray-50 text-xs uppercase text-gray-500 font-semibold">
                             <tr>
                                 <th className="px-6 py-4">Job Title</th>
-                                <th className="px-6 py-4">Department</th>
+                                <th className="px-6 py-4">Focus Areas</th>
                                 <th className="px-6 py-4">Applicants</th>
                                 <th className="px-6 py-4">Status</th>
                                 <th className="px-6 py-4">Date Posted</th>
@@ -107,14 +177,19 @@ const AdminJobsPage = () => {
                                         <div className="text-xs text-textMuted truncate max-w-[200px]">{job.description}</div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-secondary/10 text-secondary border border-secondary/20">
-                                            <Briefcase size={12} />
-                                            {job.department}
-                                        </span>
+                                        <div className="flex flex-wrap gap-1">
+                                            {job.requirements && job.requirements.slice(0, 2).map((req, i) => (
+                                                <span key={i} className="inline-flex px-2 py-0.5 rounded text-[10px] bg-slate-100 text-slate-500 border border-slate-200">
+                                                    {req}
+                                                </span>
+                                            ))}
+                                            {job.requirements && job.requirements.length > 2 && (
+                                                <span className="text-[10px] text-slate-400">+{job.requirements.length - 2}</span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4">
                                         <div className="flex -space-x-2">
-                                            {/* Placeholder avatars */}
                                             <div className="w-8 h-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs text-gray-500 font-medium">
                                                 {job.applicantsCount}
                                             </div>
@@ -137,8 +212,26 @@ const AdminJobsPage = () => {
                                             >
                                                 <Trophy size={18} />
                                             </button>
-                                            <button className="text-gray-400 hover:text-primary transition">
-                                                <MoreVertical size={18} />
+                                            <button
+                                                onClick={() => openEditModal(job)}
+                                                className="p-2 hover:bg-blue-50 rounded-lg text-blue-400 hover:text-blue-600 transition tooltip"
+                                                title="Edit Job"
+                                            >
+                                                <Edit2 size={18} />
+                                            </button>
+                                            <button
+                                                onClick={() => handleToggleStatus(job)}
+                                                className={`p-2 rounded-lg transition tooltip ${job.status === 'open' ? 'hover:bg-amber-50 text-amber-400 hover:text-amber-600' : 'hover:bg-green-50 text-green-400 hover:text-green-600'}`}
+                                                title={job.status === 'open' ? 'Pause Job' : 'Resume Job'}
+                                            >
+                                                {job.status === 'open' ? <PauseCircle size={18} /> : <PlayCircle size={18} />}
+                                            </button>
+                                            <button
+                                                onClick={() => handleDeleteJob(job._id)}
+                                                className="p-2 hover:bg-red-50 rounded-lg text-red-400 hover:text-red-600 transition tooltip"
+                                                title="Delete Job"
+                                            >
+                                                <Trash2 size={18} />
                                             </button>
                                         </div>
                                     </td>
@@ -160,40 +253,26 @@ const AdminJobsPage = () => {
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl w-full max-w-lg shadow-xl overflow-hidden animate-in fade-in zoom-in duration-200">
                         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                            <h3 className="text-lg font-bold text-primary">Create New Job</h3>
+                            <h3 className="text-lg font-bold text-primary">{isEditing ? 'Edit Job' : 'Create New Job (Strict Role)'}</h3>
                             <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">&times;</button>
                         </div>
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-textPrimary mb-1">Job Title</label>
-                                <input
-                                    type="text"
+                                <label className="block text-sm font-medium text-textPrimary mb-1">Select Job Role</label>
+                                <select
                                     name="title"
                                     value={formData.title}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none"
-                                    placeholder="e.g. Senior Frontend Engineer"
-                                    required
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium text-textPrimary mb-1">Department</label>
-                                <select
-                                    name="department"
-                                    value={formData.department}
-                                    onChange={handleChange}
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none bg-white"
+                                    onChange={handleRoleChange}
+                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none bg-white font-medium text-slate-700"
                                     required
                                 >
-                                    <option value="">Select Department</option>
-                                    <option value="Engineering">Engineering</option>
-                                    <option value="Product">Product</option>
-                                    <option value="Design">Design</option>
-                                    <option value="Marketing">Marketing</option>
-                                    <option value="HR">HR</option>
+                                    <option value="">-- Choose Role --</option>
+                                    {Object.keys(JOB_ROLES).map(role => (
+                                        <option key={role} value={role}>{role}</option>
+                                    ))}
                                 </select>
+                                <p className="text-xs text-slate-400 mt-1">This will strictly enforce the AI evaluation criteria.</p>
                             </div>
 
                             <div>
@@ -204,20 +283,21 @@ const AdminJobsPage = () => {
                                     onChange={handleChange}
                                     rows="3"
                                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none resize-none"
-                                    placeholder="Brief description of the role..."
+                                    placeholder="Brief description (e.g. Hiring for Q3 team...)"
                                     required
                                 ></textarea>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-textPrimary mb-1">Requirements (comma separated)</label>
+                                <label className="block text-sm font-medium text-textPrimary mb-1">AI Focus Areas (Auto-filled)</label>
                                 <textarea
                                     name="requirements"
                                     value={formData.requirements}
                                     onChange={handleChange}
-                                    rows="2"
-                                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none resize-none"
-                                    placeholder="React, Node.js, 5+ years exp..."
+                                    rows="3"
+                                    className="w-full px-4 py-2 bg-slate-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-secondary focus:border-transparent outline-none resize-none text-slate-600 text-sm"
+                                    placeholder="Select a role to see focus areas..."
+                                    readOnly
                                 ></textarea>
                             </div>
 
@@ -233,7 +313,7 @@ const AdminJobsPage = () => {
                                     type="submit"
                                     className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-secondary/90 transition font-medium shadow-lg shadow-secondary/20"
                                 >
-                                    Create Job
+                                    {isEditing ? 'Update Job' : 'Create Job'}
                                 </button>
                             </div>
                         </form>

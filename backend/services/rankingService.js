@@ -22,13 +22,11 @@ const updateJobRankings = async (jobId) => {
         const applications = await Application.find({ job: jobId });
 
         const updates = applications.map(app => {
-            // Mocking scores for demo if they don't exist
-            // In a real scenario, these would come from the Interview/Score models
-            // For now, we'll assume they are stored in scoreBreakdown or generate randoms for existing data
-            const currentAi = app.scoreBreakdown?.aiScore || Math.floor(Math.random() * 40) + 60; // 60-100
-            const currentManual = app.scoreBreakdown?.manualScore || Math.floor(Math.random() * 40) + 60; // 60-100
+            // Use actual scores stored in the application breakdown
+            const currentAi = app.scoreBreakdown?.aiScore || 0;
+            const currentManual = app.scoreBreakdown?.manualScore || 0;
 
-            const newScore = calculateScore(currentAi, currentManual, job.rankingConfig);
+            const newScore = calculateScore(currentAi, currentManual, job.rankingConfig || { aiWeight: 50, manualWeight: 50 });
 
             return {
                 updateOne: {

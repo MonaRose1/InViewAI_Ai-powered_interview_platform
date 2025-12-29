@@ -177,7 +177,8 @@ const AdminAnalytics = () => {
                     </div>
 
                     <div className="mt-10 space-y-4">
-                        <StatusIndicator label="Targeted" count={stats.statusDistribution.counts.hired} color="bg-secondary" percent={`${stats.statusDistribution.hired}%`} animateDelay={1.4} />
+                        <StatusIndicator label="Hired" count={stats.statusDistribution.counts.hired} color="bg-secondary" percent={`${stats.statusDistribution.hired}%`} animateDelay={1.4} />
+                        <StatusIndicator label="Shortlisted" count={stats.statusDistribution.counts.shortlisted} color="bg-indigo-400" percent={`${stats.statusDistribution.shortlisted || 0}%`} animateDelay={1.5} />
                         <StatusIndicator label="Active" count={stats.statusDistribution.counts.interviewing} color="bg-amber-400" percent={`${stats.statusDistribution.interviewing}%`} animateDelay={1.6} />
                         <StatusIndicator label="Rejected" count={stats.statusDistribution.counts.rejected} color="bg-rose-400" percent={`${stats.statusDistribution.rejected}%`} animateDelay={1.8} />
                         <StatusIndicator label="New/Pending" count={stats.statusDistribution.counts.pending} color="bg-slate-300" percent={`${stats.statusDistribution.pending}%`} animateDelay={2.0} />

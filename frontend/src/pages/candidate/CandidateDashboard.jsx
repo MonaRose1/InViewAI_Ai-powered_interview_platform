@@ -4,8 +4,11 @@ import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import JobService from '../../services/jobService';
 import ApplicationService from '../../services/applicationService';
+import { useAuth } from '../../context/AuthContext';
+import { calculateProfileCompletion } from '../../utils/profileCompletion';
 
 const CandidateDashboard = () => {
+    const { user } = useAuth();
     const [stats, setStats] = useState({ jobs: 0, applications: 0, interviewed: 0 });
     const [loading, setLoading] = useState(true);
     const [showSystemCheck, setShowSystemCheck] = useState(false);
@@ -63,9 +66,6 @@ const CandidateDashboard = () => {
                             <h2 className="text-3xl font-black mb-2">{nextInterview.application?.job?.title || 'Technical Interview'}</h2>
                             <div className="flex flex-wrap gap-4 text-white/80 font-bold uppercase tracking-widest text-xs">
                                 <span className="flex items-center gap-2">
-                                    <Briefcase size={14} /> {nextInterview.application?.job?.department || 'Engineering'}
-                                </span>
-                                <span className="flex items-center gap-2">
                                     <Clock size={14} /> {new Date(nextInterview.scheduledTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
                                 </span>
                             </div>
@@ -116,19 +116,7 @@ const CandidateDashboard = () => {
                         </div>
 
                         {/* Profile/Prep Card */}
-                        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="bg-green-50 p-3 rounded-xl text-green-600 group-hover:bg-green-100 transition-colors">
-                                    <CheckCircle className="w-6 h-6" />
-                                </div>
-                                <span className="text-2xl font-bold text-slate-800">{stats.interviewed}</span>
-                            </div>
-                            <h3 className="text-slate-500 font-medium text-sm">Interviews Completed</h3>
-                            <div className="w-full bg-slate-50 rounded-full h-2 mt-4 mb-2">
-                                <div className="bg-green-500 h-2 rounded-full transition-all duration-1000" style={{ width: '70%' }}></div>
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">70% Profile Strength</span>
-                        </div>
+                        <ProfileStrengthCard user={user} interviewsCompleted={stats.interviewed} />
                     </div>
 
                     {/* AI Prep Banner */}
@@ -278,5 +266,28 @@ const CheckItem = ({ icon, label, status }) => (
         )}
     </div>
 );
+
+const ProfileStrengthCard = ({ user, interviewsCompleted }) => {
+    const { percentage } = calculateProfileCompletion(user);
+
+    return (
+        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow group">
+            <div className="flex justify-between items-start mb-4">
+                <div className="bg-green-50 p-3 rounded-xl text-green-600 group-hover:bg-green-100 transition-colors">
+                    <CheckCircle className="w-6 h-6" />
+                </div>
+                <span className="text-2xl font-bold text-slate-800">{interviewsCompleted}</span>
+            </div>
+            <h3 className="text-slate-500 font-medium text-sm">Interviews Completed</h3>
+            <div className="w-full bg-slate-50 rounded-full h-2 mt-4 mb-2">
+                <div
+                    className="bg-green-500 h-2 rounded-full transition-all duration-1000"
+                    style={{ width: `${percentage}%` }}
+                ></div>
+            </div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{percentage}% Profile Strength</span>
+        </div>
+    );
+};
 
 export default CandidateDashboard;

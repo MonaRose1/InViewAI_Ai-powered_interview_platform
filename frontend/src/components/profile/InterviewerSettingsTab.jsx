@@ -6,8 +6,17 @@ import api from '../../services/api';
 const InterviewerSettingsTab = ({ user }) => {
     const { updateUser } = useAuth();
     const [settings, setSettings] = useState({
-        expertise: user?.expertise || ['React', 'System Design', 'Behavioral']
+        expertise: user?.expertise || []
     });
+
+    // Sync with background user updates
+    React.useEffect(() => {
+        if (user) {
+            setSettings({
+                expertise: user.expertise || []
+            });
+        }
+    }, [user]);
 
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);

@@ -50,6 +50,26 @@ const submitManualScore = async (req, res) => {
         interview.status = 'completed';
         await interview.save();
 
+        // Propagation to Application for Rankings
+        if (interview.application) {
+            const Application = require('../models/Application');
+            const { updateJobRankings } = require('../services/rankingService');
+
+            // Re-fetch AI result to be 100% sure we have the latest after background processing
+            const latestAi = await AIResult.findOne({ interview: interviewId });
+
+            await Application.findByIdAndUpdate(interview.application, {
+                'scoreBreakdown.manualScore': Math.round(manualAvg),
+                'scoreBreakdown.aiScore': latestAi ? Math.round(latestAi.overallConfidence) : 0,
+                rankingScore: interview.score
+            });
+
+            // Trigger re-ranking for this job to ensure everything is sorted
+            if (interview.job) {
+                await updateJobRankings(interview.job);
+            }
+        }
+
         res.status(201).json({ manualScore, finalScore: interview.score });
     } catch (error) {
         console.error(error);

@@ -108,7 +108,8 @@ const updateApplicationStatus = async (req, res) => {
             res.status(404).json({ message: 'Application not found' });
         }
     } catch (error) {
-        res.status(500).json({ message: 'Server Error' });
+        console.error('[UPDATE_APP_STATUS_ERROR]', error);
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 

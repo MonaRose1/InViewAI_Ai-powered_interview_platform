@@ -14,7 +14,8 @@ import {
     Cpu,
     User,
     PlusCircle,
-    TrendingUp
+    TrendingUp,
+    CheckCircle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -47,6 +48,7 @@ const Sidebar = ({ role, className = "" }) => {
             { name: 'Interviews', path: '/interviewer/interviews', icon: <Video size={20} /> },
             { name: 'Question Bank', path: '/interviewer/question-bank', icon: <FileText size={20} /> },
             { name: 'Rankings', path: '/interviewer/rankings', icon: <TrendingUp size={20} /> },
+            { name: 'Hired Candidates', path: '/interviewer/hired', icon: <CheckCircle size={20} /> },
             { name: 'History', path: '/interviewer/history', icon: <FileText size={20} /> },
             { name: 'Profile', path: '/interviewer/profile', icon: <User size={20} /> },
         ],

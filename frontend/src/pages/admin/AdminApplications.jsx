@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Eye, CheckCircle, XCircle, Clock, Download, ExternalLink, Loader2 } from 'lucide-react';
+import { Search, Filter, Eye, CheckCircle, XCircle, Clock, Download, ExternalLink, Loader2, Trash2 } from 'lucide-react';
 import api from '../../services/api';
 
 const AdminApplications = () => {
@@ -7,6 +7,9 @@ const AdminApplications = () => {
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
+
+    const [selectedApplication, setSelectedApplication] = useState(null);
+    const [showDetails, setShowDetails] = useState(false);
 
     useEffect(() => {
         fetchApplications();
@@ -38,6 +41,9 @@ const AdminApplications = () => {
                 status: newStatus
             });
             setApplications(applications.map(a => a._id === applicationId ? data : a));
+            if (selectedApplication?._id === applicationId) {
+                setSelectedApplication({ ...selectedApplication, status: newStatus });
+            }
         } catch (error) {
             console.error('Failed to update application:', error);
             alert('Failed to update application status');
@@ -50,7 +56,8 @@ const AdminApplications = () => {
             case 'interviewed': return 'bg-purple-50 text-purple-700 border-purple-100';
             case 'applied': return 'bg-gray-100 text-gray-600 border-gray-200';
             case 'rejected': return 'bg-red-50 text-red-700 border-red-100';
-            case 'offered': return 'bg-green-50 text-green-700 border-green-100';
+            case 'shortlisted': return 'bg-indigo-50 text-indigo-700 border-indigo-100';
+            case 'hired': return 'bg-green-100 text-green-800 border-green-200';
             default: return 'bg-gray-50 text-gray-600 border-gray-200';
         }
     };
@@ -61,10 +68,32 @@ const AdminApplications = () => {
             case 'interviewed': return 'Interviewed';
             case 'applied': return 'Applied';
             case 'rejected': return 'Rejected';
-            case 'offered': return 'Offered';
+            case 'shortlisted': return 'Shortlisted';
+            case 'hired': return 'Hired';
             default: return status;
         }
     };
+
+    const handleDeleteApplication = async (id) => {
+        if (!window.confirm("Are you sure you want to delete this application?")) return;
+        try {
+            await api.delete(`/admin/applications/${id}`);
+            setApplications(applications.filter(a => a._id !== id));
+            if (selectedApplication?._id === id) setShowDetails(false);
+            alert("Application deleted");
+        } catch (error) {
+            console.error("Failed to delete application", error);
+            alert("Delete failed");
+        }
+    };
+
+    const openDetails = (app) => {
+        setSelectedApplication(app);
+        setShowDetails(true);
+    };
+
+    // Filter out applications with missing candidate data
+    const validApplications = applications.filter(app => app.candidate && app.candidate.name && app.candidate.name !== 'Unknown');
 
     return (
         <div className="max-w-7xl mx-auto">
@@ -73,7 +102,7 @@ const AdminApplications = () => {
 
             {/* Status Tabs */}
             <div className="flex gap-2 mb-6 flex-wrap">
-                {['all', 'applied', 'interview_scheduled', 'interviewed', 'offered', 'rejected'].map(status => (
+                {['all', 'applied', 'interview_scheduled', 'interviewed', 'shortlisted', 'hired', 'rejected'].map(status => (
                     <button
                         key={status}
                         onClick={() => setStatusFilter(status)}
@@ -126,18 +155,18 @@ const AdminApplications = () => {
                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Date</th>
                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Score</th>
                                     <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Actions</th>
+                                    <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-50">
-                                {applications.length === 0 ? (
+                                {validApplications.length === 0 ? (
                                     <tr>
                                         <td colSpan="6" className="p-8 text-center text-slate-400">
                                             No applications found
                                         </td>
                                     </tr>
                                 ) : (
-                                    applications.map((app) => (
+                                    validApplications.map((app) => (
                                         <tr key={app._id} className="hover:bg-slate-50/50 transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
@@ -145,7 +174,7 @@ const AdminApplications = () => {
                                                         {app.candidate?.name?.charAt(0) || 'U'}
                                                     </div>
                                                     <div>
-                                                        <span className="font-medium text-slate-800">{app.candidate?.name || 'Unknown'}</span>
+                                                        <span className="font-medium text-slate-800">{app.candidate?.name}</span>
                                                         <p className="text-xs text-slate-500">{app.candidate?.email}</p>
                                                     </div>
                                                 </div>
@@ -176,20 +205,125 @@ const AdminApplications = () => {
                                                     <option value="applied">Applied</option>
                                                     <option value="interview_scheduled">Interview Scheduled</option>
                                                     <option value="interviewed">Interviewed</option>
-                                                    <option value="offered">Offered</option>
+                                                    <option value="shortlisted">Shortlisted</option>
+                                                    <option value="hired">Hired</option>
                                                     <option value="rejected">Rejected</option>
                                                 </select>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <button className="p-2 text-slate-400 hover:text-secondary hover:bg-secondary/10 rounded-lg transition">
-                                                    <ExternalLink size={18} />
-                                                </button>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <button
+                                                        onClick={() => openDetails(app)}
+                                                        className="p-2 text-slate-400 hover:text-secondary hover:bg-secondary/10 rounded-lg transition"
+                                                        title="View Details"
+                                                    >
+                                                        <ExternalLink size={18} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteApplication(app._id)}
+                                                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                                                        title="Delete Application"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))
                                 )}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Application Details Modal */}
+            {showDetails && selectedApplication && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        {/* Modal Header */}
+                        <div className="bg-slate-50 px-8 py-6 border-b border-gray-100 flex justify-between items-start">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary font-black text-2xl uppercase shadow-inner">
+                                    {selectedApplication.candidate?.name?.charAt(0) || 'U'}
+                                </div>
+                                <div>
+                                    <h2 className="text-2xl font-black text-slate-900 leading-tight">
+                                        {selectedApplication.candidate?.name}
+                                    </h2>
+                                    <p className="text-slate-500 font-medium">{selectedApplication.candidate?.email}</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setShowDetails(false)}
+                                className="p-2 hover:bg-slate-200 rounded-xl transition-colors text-slate-400"
+                            >
+                                <XCircle size={24} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-8">
+                            <div className="grid grid-cols-2 gap-8 mb-8">
+                                <div className="space-y-6">
+                                    <div>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Applied Role</h4>
+                                        <p className="text-slate-800 font-bold text-lg">{selectedApplication.job?.title || 'N/A'}</p>
+                                        <p className="text-slate-500 text-sm mt-1">{selectedApplication.job?.department || 'General'}</p>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Application Status</h4>
+                                        <span className={`inline-flex px-3 py-1 rounded-full text-xs font-black uppercase tracking-tight border ${getStageColor(selectedApplication.status)}`}>
+                                            {getStageLabel(selectedApplication.status)}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">Submission Date</h4>
+                                        <div className="flex items-center gap-2 text-slate-600 font-bold">
+                                            <Clock size={16} />
+                                            {new Date(selectedApplication.appliedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">Ranking Score</h4>
+                                    <div className="flex flex-col items-center justify-center py-4">
+                                        <div className="relative w-28 h-28 flex items-center justify-center mb-4">
+                                            <svg className="w-full h-full transform -rotate-90">
+                                                <circle cx="56" cy="56" r="50" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
+                                                <circle
+                                                    cx="56" cy="56" r="50" stroke="#0ea5e9" strokeWidth="10"
+                                                    fill="transparent" strokeDasharray="314"
+                                                    strokeDashoffset={314 - (314 * (selectedApplication.rankingScore || 0) / 100)}
+                                                    strokeLinecap="round" className="transition-all duration-1000 ease-out"
+                                                />
+                                            </svg>
+                                            <span className="absolute text-3xl font-black text-slate-900">
+                                                {Math.round(selectedApplication.rankingScore || 0)}
+                                            </span>
+                                        </div>
+                                        <p className="text-[11px] font-bold text-slate-500 text-center uppercase tracking-tighter">AI Accuracy Confidence</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Additional Info */}
+                            <div className="border-t border-slate-100 pt-8 flex gap-4">
+                                <button
+                                    onClick={() => alert("Resume view coming soon!")}
+                                    className="flex-1 flex items-center justify-center gap-3 bg-secondary text-white font-bold py-3.5 rounded-2xl hover:opacity-90 shadow-lg shadow-secondary/20 transition-all active:scale-95"
+                                >
+                                    <Download size={20} /> Download CV
+                                </button>
+                                <button
+                                    onClick={() => handleUpdateStatus(selectedApplication._id, 'interview_scheduled')}
+                                    className="flex-1 flex items-center justify-center gap-3 border-2 border-slate-100 text-slate-700 font-bold py-3.5 rounded-2xl hover:bg-slate-50 transition-all active:scale-95"
+                                >
+                                    <CheckCircle size={20} className="text-emerald-500" /> Schedule Interview
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

@@ -4,7 +4,7 @@ import { Mic, Video, PhoneOff, Clock, MicOff, VideoOff, Play } from 'lucide-reac
 import api from '../../services/api';
 import useWebRTC from '../../hooks/useWebRTC';
 import { useAuth } from '../../context/AuthContext';
-import { CheckCircle2, AlertCircle, Send, Loader2, Code, FileText, MessageSquare, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Send, Loader2, FileText, MessageSquare } from 'lucide-react';
 
 const CandidateLivePage = () => {
     const { id } = useParams();
@@ -29,12 +29,14 @@ const CandidateLivePage = () => {
         toggleVideo,
         isAudioEnabled,
         isVideoEnabled,
-        socketRef,
-        socket
-    } = useWebRTC(id, userId);
+        socket,
+        debugData
+    } = useWebRTC(id, userId, false);
+
 
     const [timeLeft, setTimeLeft] = useState(1800);
     const canvasRef = useRef(null);
+    const isPageMounted = useRef(true);
 
     const [questions, setQuestions] = useState([]); // Questions from interviewer
     const [answers, setAnswers] = useState({}); // { questionId: answer }
@@ -152,41 +154,40 @@ const CandidateLivePage = () => {
         }
     };
 
-    useEffect(() => {
-        const fetchInterview = async () => {
-            try {
-                setLoadingQuestions(true);
-                const { data } = await api.get(`/interviews/${id}`);
-                setInterviewData(data);
+    const fetchInterview = async () => {
+        try {
+            setLoadingQuestions(true);
+            const { data } = await api.get(`/interviews/${id}`);
+            setInterviewData(data);
 
-                // If questions already exist (interviewer already sent them), load them
-                if (data.questions && data.questions.length > 0) {
-                    setQuestions(data.questions);
-                    const initialAnswers = {};
-                    data.questions.forEach(q => {
-                        initialAnswers[q.questionId] = q.candidateAnswer || '';
-                    });
-                    setAnswers(initialAnswers);
-                    // Check if already submitted
-                    const allAnswered = data.questions.every(q => q.status === 'submitted' || q.status === 'analyzed');
-                    if (allAnswered && data.questions.length > 0) {
-                        setIsSubmitted(true);
-                    }
+            if (data.questions && data.questions.length > 0) {
+                setQuestions(data.questions);
+                const initialAnswers = {};
+                data.questions.forEach(q => {
+                    initialAnswers[q.questionId] = q.candidateAnswer || '';
+                });
+                setAnswers(initialAnswers);
+                const allAnswered = data.questions.every(q => q.status === 'submitted' || q.status === 'analyzed');
+                if (allAnswered && data.questions.length > 0) {
+                    setIsSubmitted(true);
                 }
-
-                if (data.scheduledTime) {
-                    const start = new Date(data.scheduledTime).getTime();
-                    const now = Date.now();
-                    const elapsed = Math.floor((now - start) / 1000);
-                    const duration = 1800; // 30 minutes
-                    setTimeLeft(Math.max(0, duration - elapsed));
-                }
-            } catch (err) {
-                console.error("Failed to sync interview data", err);
-            } finally {
-                setLoadingQuestions(false);
             }
-        };
+
+            if (data.scheduledTime) {
+                const start = new Date(data.scheduledTime).getTime();
+                const now = Date.now();
+                const elapsed = Math.floor((now - start) / 1000);
+                const duration = 1800; // 30 minutes
+                setTimeLeft(Math.max(0, duration - elapsed));
+            }
+        } catch (err) {
+            console.error("Failed to sync interview data", err);
+        } finally {
+            setLoadingQuestions(false);
+        }
+    };
+
+    useEffect(() => {
         fetchInterview();
     }, [id]);
 
@@ -201,30 +202,36 @@ const CandidateLivePage = () => {
         };
     }, []);
 
-    // AI Frame Capture (Batching: every 3 seconds)
+    // AI Frame Capture & Analysis (Relay via Signaling Server)
     useEffect(() => {
+        if (!socket || !id) return;
+
+        console.log("[AI-RELAY] Starting interval-based frame capture");
         const captureInterval = setInterval(() => {
-            if (localVideoRef.current && localVideoRef.current.srcObject && socket) {
-                captureAndSendFrame();
+            if (localVideoRef.current && canvasRef.current && socket.connected) {
+                try {
+                    const context = canvasRef.current.getContext('2d');
+                    context.drawImage(localVideoRef.current, 0, 0, 640, 480);
+                    const frameData = canvasRef.current.toDataURL('image/jpeg', 0.4);
+
+                    // Send to main backend for proxying to AI service
+                    socket.emit('analyze-frame', {
+                        roomId: id,
+                        image_data: frameData
+                    });
+                } catch (err) {
+                    console.error("[AI-RELAY] Capture error:", err);
+                }
             }
-        }, 3000);
+        }, 3000); // 3 seconds interval for stability
 
-        return () => clearInterval(captureInterval);
-    }, [socket]);
+        return () => {
+            console.log("[AI-RELAY] Stopping frame capture");
+            clearInterval(captureInterval);
+        };
+    }, [id, socket]);
 
-    const captureAndSendFrame = () => {
-        if (!localVideoRef.current || !canvasRef.current || !socket) return;
-
-        const context = canvasRef.current.getContext('2d');
-        context.drawImage(localVideoRef.current, 0, 0, 640, 480);
-        const frameData = canvasRef.current.toDataURL('image/jpeg', 0.5);
-
-        // Send to Node.js via Socket.IO
-        socket.emit('analyze-frame', {
-            roomId: id,
-            image_data: frameData
-        });
-    };
+    // Removed old captureAndSendFrame function as it's now internal to the effect
 
     const formatTime = (seconds) => {
         const mins = Math.floor(seconds / 60);
@@ -249,7 +256,19 @@ const CandidateLivePage = () => {
                         <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-bold text-xs">AI</div>
                         <div>
                             <h1 className="font-bold text-sm">{interviewData?.job?.title || 'Technical Round'}</h1>
-                            <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{interviewData?.job?.company || 'Assessment Session'}</p>
+                            <div className="flex items-center gap-2">
+                                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">{interviewData?.job?.company || 'Assessment Session'}</p>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded-full font-black uppercase ${interviewData ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'}`}>
+                                    {interviewData ? 'API: Online' : 'API: Syncing...'}
+                                </span>
+                                <button
+                                    onClick={fetchInterview}
+                                    className="text-[8px] bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded-full text-indigo-300 font-bold uppercase transition-colors"
+                                    title="Manually sync with server"
+                                >
+                                    Sync Status
+                                </button>
+                            </div>
                         </div>
                     </div>
                     <div className="flex items-center gap-2 bg-gray-800/80 px-3 py-1 rounded-full border border-gray-700">
@@ -330,7 +349,7 @@ const CandidateLivePage = () => {
 
                 <div className="flex-1 overflow-hidden relative">
                     {/* Questions View */}
-                    <div className={`absolute inset-0 transition-all duration-500 transform ${activeTab === 'questions' ? 'translate-x-0 opacity-100 ring-0' : '-translate-x-full opacity-0 pointer-events-none'}`}>
+                    <div className={`absolute inset-0 ${activeTab === 'questions' ? 'block' : 'hidden'}`}>
                         {loadingQuestions ? (
                             <div className="h-full flex flex-col items-center justify-center p-12 text-center">
                                 <Loader2 className="animate-spin text-secondary mb-4" size={32} />
@@ -423,7 +442,7 @@ const CandidateLivePage = () => {
                         )}
                     </div>
                     {/* Chat Box View */}
-                    <div className={`absolute inset-0 transition-all duration-500 transform ${activeTab === 'chat' ? 'translate-x-0 opacity-100' : 'translate-x-full opacity-0 pointer-events-none'}`}>
+                    <div className={`absolute inset-0 ${activeTab === 'chat' ? 'block' : 'hidden'}`}>
                         <div className="h-full flex flex-col bg-white">
                             {/* Chat View */}
                             <div className="flex-1 overflow-y-auto p-8 space-y-4 custom-scrollbar">

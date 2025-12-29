@@ -22,6 +22,12 @@ const InterviewerHistory = () => {
         fetchHistory();
     }, []);
 
+    const handleDownloadReport = (interviewId) => {
+        const token = localStorage.getItem('token');
+        const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+        window.open(`${baseUrl}/api/interviews/${interviewId}/report?token=${token}`, '_blank');
+    };
+
     const filteredHistory = history.filter(item =>
         item.candidate?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.job?.title?.toLowerCase().includes(searchTerm.toLowerCase())
@@ -81,7 +87,6 @@ const InterviewerHistory = () => {
                                         </td>
                                         <td className="px-8 py-6">
                                             <div className="text-sm font-bold text-slate-600">{item.job?.title || 'Unknown Role'}</div>
-                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item.job?.department}</div>
                                         </td>
                                         <td className="px-8 py-6">
                                             <div className="text-sm font-bold text-slate-500">
@@ -90,7 +95,7 @@ const InterviewerHistory = () => {
                                         </td>
                                         <td className="px-8 py-6">
                                             <span className="px-3 py-1.5 bg-purple-50 text-purple-700 rounded-xl font-black text-[11px] border border-purple-100">
-                                                {item.aiResult?.score || 'N/A'}/100
+                                                {item.aiResult?.overallConfidence || 0}/100
                                             </span>
                                         </td>
                                         <td className="px-8 py-6">
@@ -108,7 +113,7 @@ const InterviewerHistory = () => {
                                                     <PlayCircle size={18} />
                                                 </button>
                                                 <button
-                                                    onClick={() => alert("Full PDF Report downloading...")}
+                                                    onClick={() => handleDownloadReport(item._id)}
                                                     className="p-2.5 text-slate-400 hover:text-secondary hover:bg-secondary/5 rounded-xl transition-all"
                                                     title="Full Report"
                                                 >

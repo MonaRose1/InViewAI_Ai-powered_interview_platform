@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Clock, Video, User, Briefcase, Loader2, ChevronRight, AlertCircle, BarChart } from 'lucide-react';
+import { Calendar, Clock, Video, User, Briefcase, Loader2, ChevronRight, AlertCircle, BarChart, Target } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import InterviewerService from '../../services/interviewerService';
 import ScheduleInterviewModal from './components/ScheduleInterviewModal';
@@ -19,7 +19,14 @@ const InterviewerDashboard = () => {
                 InterviewerService.getPendingApplications()
             ]);
             setInterviews(interviewsData);
-            setApplications(appsData);
+            // Filter out unknown applicants AND only show unprocessed ones (applied/pending)
+            const validApps = appsData.filter(app =>
+                app.candidate &&
+                app.candidate.name &&
+                app.candidate.name !== 'Unknown' &&
+                (app.status === 'applied' || app.status === 'pending')
+            );
+            setApplications(validApps);
         } catch (err) {
             console.error("Failed to fetch dashboard data", err);
         } finally {
@@ -34,6 +41,18 @@ const InterviewerDashboard = () => {
     const handleScheduleInterview = (app) => {
         setSelectedApp(app);
         setShowScheduleModal(true);
+    };
+
+    const handleViewProfile = (candidate) => {
+        if (candidate?.resumeUrl) {
+            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+            const fullUrl = candidate.resumeUrl.startsWith('http')
+                ? candidate.resumeUrl
+                : `${baseUrl}${candidate.resumeUrl}`;
+            window.open(fullUrl, '_blank');
+        } else {
+            alert('Resume not available for this candidate');
+        }
     };
 
     const upcomingSessions = Array.isArray(interviews) ? interviews.filter(i => i.status === 'scheduled') : [];
@@ -109,6 +128,7 @@ const InterviewerDashboard = () => {
                                         </div>
                                     </div>
 
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-4 border border-white/10">
                                             <div className="text-white/50 text-[10px] font-black uppercase mb-1">Schedule</div>
@@ -127,7 +147,10 @@ const InterviewerDashboard = () => {
                                         >
                                             <Video size={20} className="fill-current" /> START INTERVIEW
                                         </Link>
-                                        <button className="px-6 py-3.5 bg-black/20 text-white font-black rounded-2xl hover:bg-black/30 transition-all border border-white/10 backdrop-blur-sm">
+                                        <button
+                                            onClick={() => handleViewProfile(nextInterview.candidate)}
+                                            className="px-6 py-3.5 bg-black/20 text-white font-black rounded-2xl hover:bg-black/30 transition-all border border-white/10 backdrop-blur-sm"
+                                        >
                                             VIEW PROFILE
                                         </button>
                                     </div>

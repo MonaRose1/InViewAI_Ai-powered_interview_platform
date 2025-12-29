@@ -13,6 +13,8 @@ const interviewerSchema = new mongoose.Schema({
     timezone: { type: String, default: 'UTC' },
     bio: { type: String },
     avatar: { type: String },
+    avatarData: { type: Buffer },
+    avatarMimeType: { type: String },
 
     // Interviewer-specific
     expertise: [{ type: String }],
@@ -44,19 +46,18 @@ const interviewerSchema = new mongoose.Schema({
         lastActive: Date
     }],
 
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
 
-interviewerSchema.pre('save', async function (next) {
+interviewerSchema.pre('save', async function () {
     this.updatedAt = Date.now();
     if (!this.isModified('password')) {
-        next();
         return;
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
 });
 
 interviewerSchema.methods.matchPassword = async function (enteredPassword) {

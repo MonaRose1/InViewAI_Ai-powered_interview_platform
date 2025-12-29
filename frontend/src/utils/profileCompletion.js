@@ -12,11 +12,11 @@ export const calculateProfileCompletion = (user) => {
             { key: 'email', label: 'Email', check: () => !!user.email },
             { key: 'phone', label: 'Phone Number', check: () => !!user.phone },
             { key: 'location', label: 'Location', check: () => !!user.location },
-            { key: 'bio', label: 'Bio', check: () => !!user.bio && user.bio.length > 20 },
-            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar },
-            { key: 'resumeUrl', label: 'Resume', check: () => !!user.resumeUrl },
-            { key: 'skills', label: 'Skills', check: () => user.skills && user.skills.length >= 3 },
-            { key: 'topJobRoles', label: 'Preferred Roles', check: () => user.topJobRoles && user.topJobRoles.length >= 1 },
+            { key: 'bio', label: 'Bio', check: () => !!user.bio },
+            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar || !!user.avatarData },
+            { key: 'resumeUrl', label: 'Resume', check: () => !!user.resumeUrl || !!user.resumeData },
+            { key: 'skills', label: 'Skills', check: () => (user.skills && user.skills.length >= 1) || (user.primarySkills && user.primarySkills.length >= 1) },
+            { key: 'topJobRoles', label: 'Preferred Roles', check: () => (user.topJobRoles && user.topJobRoles.length >= 1) || (user.preferredRoles && user.preferredRoles.length >= 1) },
             { key: 'workType', label: 'Work Preference', check: () => !!user.workType },
         ],
         interviewer: [
@@ -24,9 +24,9 @@ export const calculateProfileCompletion = (user) => {
             { key: 'email', label: 'Email', check: () => !!user.email },
             { key: 'phone', label: 'Phone Number', check: () => !!user.phone },
             { key: 'location', label: 'Location', check: () => !!user.location },
-            { key: 'bio', label: 'Bio', check: () => !!user.bio && user.bio.length > 20 },
-            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar },
-            { key: 'expertise', label: 'Expertise Areas', check: () => user.expertise && user.expertise.length >= 2 },
+            { key: 'bio', label: 'Bio', check: () => !!user.bio },
+            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar || !!user.avatarData },
+            { key: 'expertise', label: 'Expertise Areas', check: () => user.expertise && user.expertise.length >= 1 },
             { key: 'defaultDuration', label: 'Default Interview Duration', check: () => !!user.defaultDuration },
         ],
         admin: [
@@ -34,8 +34,8 @@ export const calculateProfileCompletion = (user) => {
             { key: 'email', label: 'Email', check: () => !!user.email },
             { key: 'phone', label: 'Phone Number', check: () => !!user.phone },
             { key: 'location', label: 'Location', check: () => !!user.location },
-            { key: 'bio', label: 'Bio', check: () => !!user.bio && user.bio.length > 20 },
-            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar },
+            { key: 'bio', label: 'Bio', check: () => !!user.bio },
+            { key: 'avatar', label: 'Profile Picture', check: () => !!user.avatar || !!user.avatarData },
         ]
     };
 

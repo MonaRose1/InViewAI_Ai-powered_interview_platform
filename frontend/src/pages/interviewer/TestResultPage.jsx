@@ -23,9 +23,9 @@ const TestResultPage = () => {
                 setInterview(data);
                 if (data.manualScore) {
                     setScores({
-                        technical: data.manualScore.technical || 70,
-                        communication: data.manualScore.communication || 70,
-                        problemSolving: data.manualScore.problemSolving || 70,
+                        technical: data.manualScore.technicalScore || 70,
+                        communication: data.manualScore.communicationScore || 70,
+                        problemSolving: data.manualScore.problemSolvingScore || 70,
                         comments: data.manualScore.comments || ''
                     });
                 }

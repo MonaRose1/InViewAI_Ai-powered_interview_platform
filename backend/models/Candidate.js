@@ -12,12 +12,15 @@ const candidateSchema = new mongoose.Schema({
     location: { type: String },
     timezone: { type: String, default: 'UTC' },
     bio: { type: String },
-    avatar: { type: String },
+    avatar: { type: String }, // Keep for compatibility/legacy URL
+    avatarData: { type: Buffer }, // Binary data for photo
+    avatarMimeType: { type: String },
 
     // Candidate-specific
-    resumeUrl: { type: String },
-    resumeContent: { type: String },
+    resumeUrl: { type: String }, // Keep for compatibility/legacy URL
+    resumeData: { type: Buffer }, // Binary data for PDF
     resumeMimeType: { type: String },
+    resumeContent: { type: String },
     resumeFileName: { type: String },
     resumeUploadDate: { type: Date },
     skills: [{ type: String }],
@@ -46,19 +49,18 @@ const candidateSchema = new mongoose.Schema({
         lastActive: Date
     }],
 
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
 
-candidateSchema.pre('save', async function (next) {
+candidateSchema.pre('save', async function () {
     this.updatedAt = Date.now();
     if (!this.isModified('password')) {
-        next();
         return;
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
 });
 
 candidateSchema.methods.matchPassword = async function (enteredPassword) {

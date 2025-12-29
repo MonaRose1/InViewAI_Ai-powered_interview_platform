@@ -21,7 +21,9 @@ const InterviewerApplicants = () => {
         try {
             setLoading(true);
             const data = await InterviewerService.getPendingApplications();
-            setApplications(data);
+            // Filter out unknown applicants
+            const validApps = data.filter(app => app.candidate && app.candidate.name && app.candidate.name !== 'Unknown');
+            setApplications(validApps);
         } catch (err) {
             console.error("Failed to fetch applications", err);
         } finally {
@@ -49,7 +51,11 @@ const InterviewerApplicants = () => {
 
     const handleViewResume = (app) => {
         if (app.candidate?.resumeUrl) {
-            window.open(app.candidate.resumeUrl, '_blank');
+            const baseUrl = window.location.hostname === 'localhost' ? 'http://localhost:5000' : '';
+            const fullUrl = app.candidate.resumeUrl.startsWith('http')
+                ? app.candidate.resumeUrl
+                : `${baseUrl}${app.candidate.resumeUrl}`;
+            window.open(fullUrl, '_blank');
         } else {
             alert('Resume not available for this candidate');
         }

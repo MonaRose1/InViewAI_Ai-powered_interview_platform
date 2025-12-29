@@ -20,11 +20,16 @@ const protect = async (req, res, next) => {
             if (!user) user = await Interviewer.findById(decoded.id).select('-password');
             if (!user) user = await Candidate.findById(decoded.id).select('-password');
 
-            req.user = user;
-
-            if (!req.user) {
+            if (!user) {
                 return res.status(401).json({ message: 'Not authorized, user not found' });
             }
+
+            // --- ENFORCE SUSPENSION CHECK ---
+            if (user.status === 'suspended') {
+                return res.status(403).json({ message: 'Account suspended. Please contact support.' });
+            }
+
+            req.user = user;
 
             next();
         } catch (error) {

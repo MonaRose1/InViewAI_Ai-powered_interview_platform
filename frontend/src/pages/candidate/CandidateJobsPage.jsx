@@ -17,7 +17,6 @@ const CandidateJobsPage = () => {
     useEffect(() => {
         const filtered = jobs.filter(job =>
             job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.department.toLowerCase().includes(searchTerm.toLowerCase()) ||
             job.description.toLowerCase().includes(searchTerm.toLowerCase())
         );
         setFilteredJobs(filtered);
@@ -128,7 +127,7 @@ const CandidateJobsPage = () => {
                     type="text"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder="Search by job title, department, or keywords..."
+                    placeholder="Search by job title or keywords..."
                     className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-2xl focus:outline-none focus:ring-4 focus:ring-secondary/5 focus:border-secondary shadow-sm transition-all font-medium text-slate-700"
                 />
             </div>
@@ -146,9 +145,6 @@ const CandidateJobsPage = () => {
                                 <div className="w-14 h-14 rounded-2xl bg-secondary/5 flex items-center justify-center text-secondary group-hover:bg-secondary group-hover:text-white transition-all duration-300">
                                     <Briefcase size={28} />
                                 </div>
-                                <span className="text-[10px] font-black px-3 py-1 bg-slate-50 text-slate-500 rounded-full uppercase tracking-widest border border-slate-100">
-                                    {job.department}
-                                </span>
                             </div>
 
                             <h3 className="text-xl font-bold text-slate-800 mb-2 group-hover:text-secondary transition-colors line-clamp-1">{job.title}</h3>

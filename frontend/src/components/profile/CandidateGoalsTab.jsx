@@ -19,9 +19,9 @@ const CandidateGoalsTab = ({ user }) => {
     const [loading, setLoading] = useState(false);
     const [success, setSuccess] = useState(false);
 
-    // Sync with user prop ONLY if goals are empty or it's a first load
+    // Sync with background user updates
     useEffect(() => {
-        if (user && goals.preferredRoles.length === 0 && goals.primarySkills.length === 0) {
+        if (user) {
             setGoals({
                 preferredRoles: user.topJobRoles || [],
                 workType: user.workType || 'Remote',

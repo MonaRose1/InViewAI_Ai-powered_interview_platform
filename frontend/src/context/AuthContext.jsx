@@ -10,11 +10,29 @@ export const AuthProvider = ({ children }) => {
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const userInfo = localStorage.getItem('userInfo');
-        if (userInfo) {
-            setUser(JSON.parse(userInfo));
-        }
-        setLoading(false);
+        const initAuth = async () => {
+            const token = localStorage.getItem('token');
+            const storedUserInfo = localStorage.getItem('userInfo');
+
+            // 1. Load from storage immediately for fast UI
+            if (storedUserInfo) {
+                setUser(JSON.parse(storedUserInfo));
+            }
+
+            // 2. Refresh from server in background
+            if (token) {
+                try {
+                    const { data } = await api.get('/profile');
+                    const updatedUser = { ...data, token };
+                    setUser(updatedUser);
+                    localStorage.setItem('userInfo', JSON.stringify(updatedUser));
+                } catch (err) {
+                    console.error("Background sync failed:", err.message);
+                }
+            }
+            setLoading(false);
+        };
+        initAuth();
     }, []);
 
     const login = async (email, password) => {

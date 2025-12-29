@@ -13,6 +13,8 @@ const adminSchema = new mongoose.Schema({
     timezone: { type: String, default: 'UTC' },
     bio: { type: String },
     avatar: { type: String },
+    avatarData: { type: Buffer },
+    avatarMimeType: { type: String },
 
     // Preferences
     preferences: {
@@ -27,18 +29,18 @@ const adminSchema = new mongoose.Schema({
         lastActive: Date
     }],
 
+    status: { type: String, enum: ['active', 'suspended'], default: 'active' },
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
 
-adminSchema.pre('save', async function (next) {
+adminSchema.pre('save', async function () {
     this.updatedAt = Date.now();
     if (!this.isModified('password')) {
-        return next();
+        return;
     }
     const salt = await bcrypt.genSalt(10);
     this.password = await bcrypt.hash(this.password, salt);
-    next();
 });
 
 adminSchema.methods.matchPassword = async function (enteredPassword) {

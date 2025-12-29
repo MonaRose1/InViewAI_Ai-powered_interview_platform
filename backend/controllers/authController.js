@@ -12,6 +12,24 @@ const registerUser = async (req, res) => {
         const { name, email, password, role } = req.body;
         const targetRole = role || 'candidate';
 
+        // --- PASSWORD SECURITY CHECKS ---
+        // 1. Check length
+        if (password.length < 8) {
+            return res.status(400).json({ message: 'Password must be at least 8 characters long' });
+        }
+        // 2. Check for Uppercase
+        if (!/[A-Z]/.test(password)) {
+            return res.status(400).json({ message: 'Password must contain at least one uppercase letter' });
+        }
+        // 3. Check for Lowercase
+        if (!/[a-z]/.test(password)) {
+            return res.status(400).json({ message: 'Password must contain at least one lowercase letter' });
+        }
+        // 4. Check for Symbols
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+            return res.status(400).json({ message: 'Password must contain at least one special character (symbol)' });
+        }
+
         let Model;
         if (targetRole === 'candidate') Model = Candidate;
         else if (targetRole === 'interviewer') Model = Interviewer;
@@ -32,19 +50,25 @@ const registerUser = async (req, res) => {
         });
 
         if (user) {
+            const fullUser = await (targetRole === 'candidate' ? Candidate :
+                targetRole === 'interviewer' ? Interviewer :
+                    Admin).findById(user._id).select('-password -activeSessions -resumeData -avatarData');
+
             res.status(201).json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
+                ...fullUser._doc,
                 token: generateToken(user._id),
             });
-        } else {
+        }
+        else {
             res.status(400).json({ message: 'Invalid user data' });
         }
     } catch (error) {
-        console.error('Register error:', error);
-        res.status(500).json({ message: 'Server error during registration', error: error.message });
+        console.error('[REGISTER ERROR FULL]', error);
+        res.status(500).json({
+            message: 'Server error during registration',
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 };
 
@@ -95,14 +119,24 @@ const loginUser = async (req, res) => {
         }
 
         if (user && (await user.matchPassword(password))) {
+            // --- ENFORCE SUSPENSION CHECK ---
+            if (user.status === 'suspended') {
+                console.log(`[LOGIN BLOCKED] ${email} - Account is suspended`);
+                return res.status(403).json({ message: 'Account suspended. Please contact support.' });
+            }
+
+            // Get user without sensitive or heavy data
+            const fullUser = await (user.role === 'candidate' ? Candidate :
+                user.role === 'interviewer' ? Interviewer :
+                    Admin).findById(user._id).select('-password -activeSessions -resumeData -avatarData');
+
             res.json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role, // role field from model
+                ...fullUser._doc,
                 token: generateToken(user._id),
             });
-        } else {
+        }
+        else {
+            console.log(`[LOGIN FAILED] ${email} - User found: ${!!user}${user ? ', Pwd match: ' + (await user.matchPassword(password)) : ''}`);
             res.status(401).json({ message: 'Invalid email or password' });
         }
     } catch (error) {

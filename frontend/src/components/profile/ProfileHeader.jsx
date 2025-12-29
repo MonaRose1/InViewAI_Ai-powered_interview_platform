@@ -42,8 +42,14 @@ const ProfileHeader = ({ user }) => {
         setUploading(true);
 
         try {
-            const { data } = await api.put('/profile/avatar', {
-                avatar: croppedImageBase64
+            // Convert base64 to file for multipart upload
+            const response = await fetch(croppedImageBase64);
+            const blob = await response.blob();
+            const formData = new FormData();
+            formData.append('avatar', blob, 'avatar.jpg');
+
+            const { data } = await api.put('/profile/avatar', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
             updateUser(data);
         } catch (err) {
@@ -76,7 +82,15 @@ const ProfileHeader = ({ user }) => {
                 <div className="relative group">
                     <div className="w-24 h-24 rounded-full bg-slate-100 flex items-center justify-center text-3xl font-bold text-slate-400 overflow-hidden border-4 border-white shadow-md">
                         {user?.avatar ? (
-                            <img src={user.avatar} alt={user.name} className="w-full h-full object-cover" />
+                            <img
+                                src={user.avatar.startsWith('http') ? user.avatar : `http://localhost:5000${user.avatar}`}
+                                alt={user.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.src = ''; // Fallback to initial
+                                }}
+                            />
                         ) : (
                             user?.name?.charAt(0)
                         )}

@@ -4,93 +4,128 @@ const Interview = require('../models/Interview');
 const Candidate = require('../models/Candidate');
 const Interviewer = require('../models/Interviewer');
 const Admin = require('../models/Admin');
+const AIResult = require('../models/AIResult');
 
 // @desc    Get System Stats for Admin Dashboard
 // @route   GET /api/admin/stats
 // @access  Private/Admin
 const getAdminStats = async (req, res) => {
     try {
-        const [
-            totalInterviews,
-            totalCandidates,
-            totalJobs,
-            totalApplications,
-            allInterviews,
-            allApplications,
-            recentCandidates,
-            recentInterviews
-        ] = await Promise.all([
-            Interview.countDocuments(),
-            Candidate.countDocuments(),
-            Job.countDocuments({ status: 'open' }),
-            Application.countDocuments(),
-            Interview.find().populate('aiAnalysis'),
-            Application.find(),
-            Candidate.find().sort({ createdAt: -1 }).limit(5),
-            Interview.find().sort({ createdAt: -1 }).limit(5).populate('candidate job')
-        ]);
+        // --- STEP 1: FETCH BASIC COUNTS ---
+        // We fetch the core numbers needed for the dashboard cards
+        const totalInterviews = await Interview.countDocuments();
+        const totalCandidates = await Candidate.countDocuments();
+        const totalJobs = await Job.countDocuments({ status: 'open' });
+        const totalApplications = await Application.countDocuments();
 
-        // Calculate average AI score
-        const completed = allInterviews.filter(i => i.status === 'completed');
-        const avgScore = completed.length > 0
-            ? Math.round(completed.reduce((sum, i) => sum + (i.aiAnalysis?.overallScore || 0), 0) / completed.length)
-            : 0;
+        // --- STEP 2: FETCH DATA FOR CALCULATIONS ---
+        const allInterviews = await Interview.find().populate('aiResult');
+        const allApplications = await Application.find();
 
-        // Weekly volume (Mon-Sun for current week)
-        const today = new Date();
-        const startOfWeek = new Date(today);
-        startOfWeek.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1)); // Set to Monday
-        startOfWeek.setHours(0, 0, 0, 0);
+        // Fetch recent items for the "Activity" feed (top 5 newest)
+        const recentCandidates = await Candidate.find().sort({ createdAt: -1 }).limit(5);
+        const recentInterviews = await Interview.find().sort({ createdAt: -1 }).limit(5).populate('candidate job');
 
-        const weeklyVolume = [0, 0, 0, 0, 0, 0, 0]; // Mon to Sun
-        allInterviews.forEach(i => {
-            const date = new Date(i.scheduledTime || i.createdAt);
-            if (date >= startOfWeek) {
-                const day = date.getDay(); // 0 is Sun
-                const index = day === 0 ? 6 : day - 1; // Map Sun to 6, Mon to 0
-                if (index >= 0 && index < 7) weeklyVolume[index]++;
+        // --- STEP 3: CALCULATE AVERAGE AI SCORE ---
+        let totalAiScore = 0;
+        let completedCount = 0;
+
+        // We use a simple loop to sum up scores from completed interviews
+        allInterviews.forEach(interview => {
+            if (interview.status === 'completed' && interview.aiResult) {
+                totalAiScore += (interview.aiResult.overallConfidence || 0);
+                completedCount++;
             }
         });
 
-        // Application Status Distribution
-        const stats = { hired: 0, pending: 0, rejected: 0, interviewing: 0 };
-        allApplications.forEach(app => {
-            if (['interview_scheduled', 'interviewed'].includes(app.status)) stats.interviewing++;
-            else if (app.status === 'rejected') stats.rejected++;
-            else if (app.status === 'shortlisted') stats.hired++; // Placeholder for hired
-            else stats.pending++;
+        const avgScore = completedCount > 0 ? Math.round(totalAiScore / completedCount) : 0;
+
+        // --- STEP 4: CALCULATE WEEKLY VOLUME ---
+        // We count how many interviews happened each day of this week (Mon to Sun)
+        const weeklyVolume = [0, 0, 0, 0, 0, 0, 0];
+
+        const todayAtZero = new Date();
+        todayAtZero.setHours(0, 0, 0, 0);
+
+        // Calculate Monday of this week
+        const startOfWeek = new Date(todayAtZero);
+        const dayOfWeek = todayAtZero.getDay(); // 0 is Sun, 1 is Mon
+        const diffToMonday = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek);
+        startOfWeek.setDate(todayAtZero.getDate() + diffToMonday);
+
+        allInterviews.forEach(interview => {
+            const scheduledDate = new Date(interview.scheduledTime || interview.createdAt);
+
+            if (scheduledDate >= startOfWeek) {
+                const day = scheduledDate.getDay(); // 0=Sun, 1=Mon...
+                let index = day - 1;
+                if (day === 0) index = 6; // Set Sunday to last index
+
+                if (index >= 0 && index < 7) {
+                    weeklyVolume[index]++;
+                }
+            }
         });
 
-        const total = allApplications.length || 1;
+        // --- STEP 5: APPLICATION STATUS DISTRIBUTION ---
+        const statsCount = { hired: 0, shortlisted: 0, interviewing: 0, rejected: 0, pending: 0 };
+
+        allApplications.forEach(app => {
+            if (app.status === 'interview_scheduled' || app.status === 'interviewed') {
+                statsCount.interviewing++;
+            } else if (app.status === 'rejected') {
+                statsCount.rejected++;
+            } else if (app.status === 'hired') {
+                statsCount.hired++;
+            } else if (app.status === 'shortlisted' || app.status === 'offered') {
+                statsCount.shortlisted++; // Handle both for safety
+            } else {
+                statsCount.pending++;
+            }
+        });
+
+        const totalApps = allApplications.length || 1;
         const statusDistribution = {
-            hired: Math.round((stats.hired / total) * 100),
-            interviewing: Math.round((stats.interviewing / total) * 100),
-            rejected: Math.round((stats.rejected / total) * 100),
-            pending: Math.round((stats.pending / total) * 100),
-            counts: stats
+            hired: Math.round((statsCount.hired / totalApps) * 100),
+            shortlisted: Math.round((statsCount.shortlisted / totalApps) * 100),
+            interviewing: Math.round((statsCount.interviewing / totalApps) * 100),
+            rejected: Math.round((statsCount.rejected / totalApps) * 100),
+            pending: Math.round((statsCount.pending / totalApps) * 100),
+            counts: statsCount
         };
 
-        // Monthly Growth (Candidates)
-        const lastMonth = new Date();
-        lastMonth.setMonth(today.getMonth() - 1);
-        const lastMonthCount = await Candidate.countDocuments({ createdAt: { $lt: lastMonth } });
-        const monthlyGrowth = lastMonthCount > 0
-            ? Math.round(((totalCandidates - lastMonthCount) / lastMonthCount) * 100)
-            : totalCandidates * 100;
+        // --- STEP 6: MONTHLY GROWTH ---
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(new Date().getMonth() - 1);
 
-        // Formulate Recent Activity
-        const recentActivity = [
-            ...recentCandidates.map(c => ({
+        const oldCandidateCount = await Candidate.countDocuments({ createdAt: { $lt: oneMonthAgo } });
+
+        let growthPercent = totalCandidates * 100; // Case where we started at zero
+        if (oldCandidateCount > 0) {
+            growthPercent = Math.round(((totalCandidates - oldCandidateCount) / oldCandidateCount) * 100);
+        }
+
+        // --- STEP 7: RECENT ACTIVITY FEED ---
+        const candidateActivity = recentCandidates
+            .filter(c => c.name && c.name !== 'Unknown')
+            .map(c => ({
                 title: `New candidate registered: ${c.name}`,
                 time: c.createdAt,
                 type: 'user'
-            })),
-            ...recentInterviews.map(i => ({
-                title: `Interview ${i.status}: ${i.candidate?.name || 'Unknown'}`,
+            }));
+
+        const interviewActivity = recentInterviews
+            .filter(i => i.candidate && i.candidate.name && i.candidate.name !== 'Unknown')
+            .map(i => ({
+                title: `Interview ${i.status}: ${i.candidate.name}`,
                 time: i.updatedAt || i.createdAt,
                 type: 'interview'
-            }))
-        ].sort((a, b) => new Date(b.time) - new Date(a.time)).slice(0, 5);
+            }));
+
+        // Combine both feeds, sort by latest time, and pick top 5
+        const finalActivityFeed = [...candidateActivity, ...interviewActivity]
+            .sort((a, b) => new Date(b.time) - new Date(a.time))
+            .slice(0, 5);
 
         res.json({
             interviews: totalInterviews,
@@ -98,14 +133,19 @@ const getAdminStats = async (req, res) => {
             jobs: totalJobs,
             applications: totalApplications,
             avgScore,
-            monthlyGrowth,
+            monthlyGrowth: growthPercent,
             weeklyVolume,
             statusDistribution,
-            recentActivity
+            recentActivity: finalActivityFeed
         });
     } catch (error) {
-        console.error('Admin stats error:', error);
-        res.status(500).json({ message: 'Server error', error: error.message });
+        console.error('FATAL: Admin stats error:', error);
+        // Include stack trace in dev mode for faster debugging
+        res.status(500).json({
+            message: 'Server error in stats calculation',
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 };
 
@@ -138,6 +178,9 @@ const getUsers = async (req, res) => {
         } else if (role === 'admin') {
             users = await Admin.find(query).select('-password -activeSessions');
         }
+
+        // Filter out unknown users
+        users = users.filter(u => u.name && u.name !== 'Unknown');
 
         // Sort by createdAt desc
         users.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -196,18 +239,6 @@ const createUser = async (req, res) => {
             password,
             status: 'active'
         });
-
-        // IMPORTANT: The previous User schema likely handled password hashing in a pre-save hook.
-        // My new schemas did NOT include bcrypt hashing in pre-save. I must hash it here or update schema.
-        // For safety, I will rely on AuthController logic which hashes it, OR I should add hashing here.
-        // Wait, the AuthController hashes manually. The new Models do NOT have pre-save hash logic in my previous tool call.
-        // I should probably hash it here to be safe since createUser is admin func.
-        // But wait, the previous code comment said "Will be hashed by pre-save hook".
-        // Let's assume I need to hash it here as my new models only set updatedAt.
-
-        // Correction: I should update schemas to include hashing, OR update this controller to hash. 
-        // Updating this controller is safer right now.
-        // Actually, let's verify if I should hash it here. Yes.
 
         const userResponse = user.toObject();
         delete userResponse.password;
@@ -280,10 +311,13 @@ const getApplications = async (req, res) => {
             if (endDate) query.appliedAt.$lte = new Date(endDate);
         }
 
-        const applications = await Application.find(query)
+        let applications = await Application.find(query)
             .populate('candidate', 'name email')
             .populate('job', 'title department')
             .sort({ appliedAt: -1 });
+
+        // Filter out invalid candidates
+        applications = applications.filter(app => app.candidate && app.candidate.name && app.candidate.name !== 'Unknown');
 
         // Filter by search if provided
         let results = applications;
@@ -346,7 +380,7 @@ const getInterviews = async (req, res) => {
             .populate('candidate', 'name email')
             .populate('interviewer', 'name')
             .populate('job', 'title')
-            .populate('aiAnalysis')
+            .populate('aiResult')
             .sort({ scheduledTime: -1 });
 
         res.json(interviews);
@@ -423,7 +457,7 @@ const exportData = async (req, res) => {
                     .populate('candidate', 'name email')
                     .populate('interviewer', 'name')
                     .populate('job', 'title')
-                    .populate('aiAnalysis')
+                    .populate('aiResult')
                     .sort({ scheduledTime: -1 });
 
                 headers = ['Date', 'Candidate', 'Email', 'Position', 'Interviewer', 'Status', 'Score'];
@@ -434,7 +468,7 @@ const exportData = async (req, res) => {
                     i.job?.title || 'N/A',
                     i.interviewer?.name || 'Not Assigned',
                     i.status,
-                    i.aiAnalysis?.overallScore || 'N/A'
+                    i.aiResult?.overallConfidence || 'N/A'
                 ]);
                 filename = 'interviews';
                 break;

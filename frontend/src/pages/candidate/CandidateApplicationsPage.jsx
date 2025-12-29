@@ -30,6 +30,7 @@ const CandidateApplicationsPage = () => {
             case 'interview_scheduled': return 'bg-amber-50 text-amber-700 border-amber-100 animate-pulse';
             case 'interviewed': return 'bg-purple-50 text-purple-700 border-purple-100';
             case 'offered': return 'bg-green-50 text-green-700 border-green-100 font-black';
+            case 'hired': return 'bg-green-500 text-white border-green-600 font-black shadow-lg shadow-green-100';
             case 'rejected': return 'bg-red-50 text-red-700 border-red-100';
             default: return 'bg-slate-50 text-slate-600 border-slate-100';
         }
@@ -55,7 +56,7 @@ const CandidateApplicationsPage = () => {
                         <table className="w-full text-left">
                             <thead className="bg-slate-50/50 text-[11px] uppercase text-slate-500 font-black tracking-widest">
                                 <tr>
-                                    <th className="px-8 py-5">Position & Dept</th>
+                                    <th className="px-8 py-5">Position</th>
                                     <th className="px-8 py-5">Applied Date</th>
                                     <th className="px-8 py-5">Stage</th>
                                     <th className="px-8 py-5 text-right">Actions</th>
@@ -68,7 +69,6 @@ const CandidateApplicationsPage = () => {
                                             <div className="font-bold text-slate-800 group-hover:text-secondary transition-colors underline decoration-transparent group-hover:decoration-secondary">
                                                 {app.job?.title}
                                             </div>
-                                            <div className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mt-1">{app.job?.department}</div>
                                         </td>
                                         <td className="px-8 py-6 text-sm font-bold text-slate-500">
                                             {new Date(app.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
@@ -141,7 +141,6 @@ const CandidateApplicationsPage = () => {
                                         <div className="p-6 bg-slate-50 rounded-3xl border border-slate-100">
                                             <div className="text-[10px] font-black text-secondary uppercase tracking-widest mb-1">Position</div>
                                             <h4 className="text-lg font-bold text-slate-800">{selectedApp.job?.title}</h4>
-                                            <p className="text-sm font-medium text-slate-500 mt-1">{selectedApp.job?.department}</p>
                                         </div>
 
                                         <div>
