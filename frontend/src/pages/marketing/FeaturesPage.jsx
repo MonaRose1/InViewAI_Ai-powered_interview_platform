@@ -88,7 +88,7 @@ const FeaturesPage = () => {
                         <Link to="/register" className="px-8 py-3 bg-white text-secondary font-bold rounded-lg hover:bg-secondary/10 transition">
                             Get Started
                         </Link>
-                        <Link to="/contact-support" className="px-8 py-3 border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition">
+                        <Link to="/contact" className="px-8 py-3 border-2 border-white text-white font-bold rounded-lg hover:bg-white/10 transition">
                             Contact Sales
                         </Link>
                     </div>

@@ -5,6 +5,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const path = require('path');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
 
 dotenv.config();
 
@@ -46,6 +48,26 @@ const io = new Server(server, {
     methods: ["GET", "POST"]
   }
 });
+
+// Initialize Redis Adapter if Enabled
+if (process.env.ENABLE_REDIS === 'true') {
+  (async () => {
+    try {
+      const pubClient = createClient({
+        url: `redis://${process.env.REDIS_HOST || '127.0.0.1'}:${process.env.REDIS_PORT || 6379}`
+      });
+      const subClient = pubClient.duplicate();
+
+      await Promise.all([pubClient.connect(), subClient.connect()]);
+
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log('✅ Redis Adapter connected');
+    } catch (err) {
+      console.error('❌ Redis Adapter failed:', err.message);
+      console.log('⚠️ Falling back to default memory adapter');
+    }
+  })();
+}
 
 // Track users in rooms: { roomId: { socketId: userId } }
 const roomUsers = new Map();

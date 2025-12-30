@@ -49,7 +49,6 @@ const Sidebar = ({ role, className = "" }) => {
             { name: 'Question Bank', path: '/interviewer/question-bank', icon: <FileText size={20} /> },
             { name: 'Rankings', path: '/interviewer/rankings', icon: <TrendingUp size={20} /> },
             { name: 'Hired Candidates', path: '/interviewer/hired', icon: <CheckCircle size={20} /> },
-            { name: 'History', path: '/interviewer/history', icon: <FileText size={20} /> },
             { name: 'Profile', path: '/interviewer/profile', icon: <User size={20} /> },
         ],
         candidate: [

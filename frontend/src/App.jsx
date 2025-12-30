@@ -27,7 +27,6 @@ import CandidateApplicationsPage from './pages/candidate/CandidateApplicationsPa
 import LiveInterviewPage from './pages/interviewer/LiveInterviewPage';
 import TestResultPage from './pages/interviewer/TestResultPage';
 import CandidateLivePage from './pages/candidate/CandidateLivePage';
-import InterviewerHistory from './pages/interviewer/InterviewerHistory';
 import InterviewerNotes from './pages/interviewer/InterviewerNotes';
 import CandidateResume from './pages/candidate/CandidateResume';
 import CandidateInterviewPrep from './pages/candidate/CandidateInterviewPrep';
@@ -38,9 +37,7 @@ import NotificationPage from './pages/NotificationPage';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import VerifyEmail from './pages/auth/VerifyEmail';
-import HelpCenter from './pages/support/HelpCenter';
-import FAQPage from './pages/support/FAQPage';
-import ContactSupport from './pages/support/ContactSupport';
+
 import ContactPage from './pages/marketing/ContactPage';
 import FeaturesPage from './pages/marketing/FeaturesPage';
 import HowItWorksPage from './pages/marketing/HowItWorksPage';
@@ -68,9 +65,7 @@ const App = () => {
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/verify-email" element={<VerifyEmail />} />
-            <Route path="/help" element={<HelpCenter />} />
-            <Route path="/faq" element={<FAQPage />} />
-            <Route path="/contact-support" element={<ContactSupport />} />
+
             <Route path="/contact" element={<ContactPage />} />
             <Route path="/notifications" element={<NotificationPage />} />
 
@@ -132,7 +127,6 @@ const App = () => {
               <Route path="question-bank" element={<InterviewerQuestionPage />} />
               <Route path="rankings" element={<InterviewerRankings />} />
               <Route path="hired" element={<HiredCandidates />} />
-              <Route path="history" element={<InterviewerHistory />} />
               <Route path="profile" element={<ProfilePage />} />
             </Route>
 

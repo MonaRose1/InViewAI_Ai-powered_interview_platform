@@ -111,7 +111,7 @@ const PricingPage = () => {
                             </ul>
 
                             <Link
-                                to={plan.name === "Enterprise" ? "/contact-support" : "/register"}
+                                to={plan.name === "Enterprise" ? "/contact" : "/register"}
                                 className={`block w-full py-3 text-center font-bold rounded-lg transition ${plan.popular
                                     ? 'bg-secondary text-white hover:bg-secondary/90 shadow-md'
                                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'

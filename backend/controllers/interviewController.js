@@ -10,6 +10,9 @@ const getMyInterviews = async (req, res) => {
     try {
         const interviews = await Interview.find({ interviewer: req.user._id })
             .populate('candidate', 'name email')
+            .populate('job', 'title department')
+            .populate('aiResult')
+            .populate('manualScore')
             .populate({
                 path: 'application',
                 populate: {

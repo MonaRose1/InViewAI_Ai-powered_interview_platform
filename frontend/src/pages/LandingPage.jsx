@@ -252,9 +252,9 @@ const LandingPage = () => {
                             <Link to="/register" className="px-8 py-4 rounded-full bg-white text-secondary text-lg font-bold hover:bg-slate-50 transition shadow-xl">
                                 Get Started Now
                             </Link>
-                            <button className="px-8 py-4 rounded-full bg-transparent text-white text-lg font-semibold border border-white/20 hover:bg-white/10 transition">
+                            <Link to="/contact" className="px-8 py-4 rounded-full bg-transparent text-white text-lg font-semibold border border-white/20 hover:bg-white/10 transition">
                                 Talk to Sales
-                            </button>
+                            </Link>
                         </div>
                     </div>
                 </section>

@@ -149,20 +149,26 @@ const CandidateApplicationsPage = () => {
                                                 <TimelineItem
                                                     icon={<CheckCircle className="text-green-500" />}
                                                     title="Application Submitted"
-                                                    date={new Date(selectedApp.appliedAt).toLocaleDateString()}
-                                                    active
+                                                    date={new Date(selectedApp.appliedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                                                    active={true}
                                                 />
                                                 <TimelineItem
-                                                    icon={<Clock className={selectedApp.status !== 'applied' ? 'text-green-500' : 'text-amber-500'} />}
+                                                    icon={<Clock className={['interview_scheduled', 'interviewed', 'hired', 'shortlisted'].includes(selectedApp.status) ? 'text-green-500' : 'text-amber-500'} />}
                                                     title="Review Process"
-                                                    date={selectedApp.status !== 'applied' ? 'Completed' : 'In Progress'}
-                                                    active={selectedApp.status !== 'applied'}
+                                                    date={['interview_scheduled', 'interviewed', 'hired', 'shortlisted'].includes(selectedApp.status) ? 'Passed' : 'Processing'}
+                                                    active={true}
                                                 />
                                                 <TimelineItem
-                                                    icon={<Calendar className={selectedApp.status === 'interview_scheduled' ? 'text-secondary' : 'text-slate-300'} />}
+                                                    icon={<Calendar className={['interview_scheduled', 'interviewed', 'hired'].includes(selectedApp.status) ? 'text-green-500' : 'text-slate-300'} />}
                                                     title="Interview Stage"
-                                                    date={selectedApp.status === 'interview_scheduled' ? 'Scheduled' : 'Pending'}
-                                                    active={selectedApp.status.includes('interview')}
+                                                    date={['interviewed', 'hired'].includes(selectedApp.status) ? 'Completed' : selectedApp.status === 'interview_scheduled' ? 'Scheduled' : 'Pending'}
+                                                    active={['interview_scheduled', 'interviewed', 'hired'].includes(selectedApp.status)}
+                                                />
+                                                <TimelineItem
+                                                    icon={<CheckCircle className={selectedApp.status === 'hired' ? 'text-green-500' : 'text-slate-300'} />}
+                                                    title="Final Decision"
+                                                    date={selectedApp.status === 'hired' ? 'Hired' : selectedApp.status === 'rejected' ? 'Not Selected' : 'Pending'}
+                                                    active={['hired', 'rejected'].includes(selectedApp.status)}
                                                 />
                                             </div>
                                         </div>

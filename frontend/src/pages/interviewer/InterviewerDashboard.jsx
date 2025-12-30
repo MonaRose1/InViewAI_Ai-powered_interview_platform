@@ -180,7 +180,7 @@ const InterviewerDashboard = () => {
                             <h3 className="text-slate-800 font-black text-xl">No Pending Interviews</h3>
                             <p className="text-slate-400 font-medium">Sit back and relax! You've cleared your current agenda.</p>
                             <Link to="/interviewer/interviews" className="mt-6 inline-block px-6 py-3 bg-slate-100 text-slate-600 font-bold rounded-2xl hover:bg-slate-200 transition-all">
-                                Review History
+                                Manage Interviews
                             </Link>
                         </div>
                     )}

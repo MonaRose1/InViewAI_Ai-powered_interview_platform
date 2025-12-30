@@ -64,14 +64,13 @@ const AdminCandidatesPage = () => {
                             <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Joined Date</th>
                             <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Skills</th>
                             <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Status</th>
-                            <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
                         {loading ? (
-                            <tr><td colSpan="5" className="p-8 text-center text-slate-400">Loading candidates...</td></tr>
+                            <tr><td colSpan="4" className="p-8 text-center text-slate-400">Loading candidates...</td></tr>
                         ) : filteredCandidates.length === 0 ? (
-                            <tr><td colSpan="5" className="p-8 text-center text-slate-400">No candidates found.</td></tr>
+                            <tr><td colSpan="4" className="p-8 text-center text-slate-400">No candidates found.</td></tr>
                         ) : (
                             filteredCandidates.map((candidate, i) => (
                                 <tr key={candidate._id || i} className="hover:bg-slate-50/50 transition-colors group">
@@ -105,16 +104,7 @@ const AdminCandidatesPage = () => {
                                             {candidate.status || 'Active'}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button className="p-2 text-slate-400 hover:text-secondary hover:bg-secondary/10 rounded-lg transition">
-                                                <Mail size={16} />
-                                            </button>
-                                            <button className="p-2 text-slate-400 hover:text-secondary hover:bg-secondary/10 rounded-lg transition">
-                                                <ExternalLink size={16} />
-                                            </button>
-                                        </div>
-                                    </td>
+
                                 </tr>
                             ))
                         )}
